@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+
+# Build
+dist
+*.local
+
+# Vite
+.vite
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.cursor
+
+# Test / coverage
+coverage
+*.lcov
+
+# Optional eslint cache
+.eslintcache

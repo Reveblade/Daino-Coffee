@@ -1,0 +1,17 @@
+# Build the Vite + nginx image and push to Container Registry.
+# From frontend: gcloud builds submit . --config=cloudbuild.yaml
+# From repo root: gcloud builds submit ./frontend --config=frontend/cloudbuild.yaml
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/frontend:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/frontend:latest'
+      - '.'
+
+images:
+  - 'gcr.io/$PROJECT_ID/frontend:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/frontend:latest'
