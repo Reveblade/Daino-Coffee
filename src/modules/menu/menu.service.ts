@@ -8,6 +8,7 @@ import { Model, Types } from 'mongoose';
 import { Category, CategoryDocument } from './schemas/category.schema';
 import { Product, ProductDocument } from './schemas/product.schema';
 import { UploadsService } from '../uploads/uploads.service';
+import { StoreRealtimeGateway } from '../store-realtime/store-realtime.gateway';
 
 @Injectable()
 export class MenuService {
@@ -17,6 +18,7 @@ export class MenuService {
     @InjectModel(Product.name)
     private readonly productModel: Model<ProductDocument>,
     private readonly uploads: UploadsService,
+    private readonly storeRealtime: StoreRealtimeGateway,
   ) {}
 
   async publicMenuTree() {
@@ -52,7 +54,7 @@ export class MenuService {
       }
       parentId = p._id;
     }
-    return this.categoryModel.create({
+    const created = await this.categoryModel.create({
       name: body.name,
       description: body.description,
       parentId,
@@ -60,6 +62,8 @@ export class MenuService {
       imageUrl: body.imageUrl,
       isActive: true,
     });
+    this.storeRealtime.notifyMenuChanged();
+    return created;
   }
 
   async updateCategory(
@@ -100,6 +104,7 @@ export class MenuService {
     if (patch.imageUrl !== undefined) c.imageUrl = patch.imageUrl;
     if (patch.isActive !== undefined) c.isActive = patch.isActive;
     await c.save();
+    this.storeRealtime.notifyMenuChanged();
     return c;
   }
 
@@ -123,6 +128,7 @@ export class MenuService {
     if (!res) {
       throw new NotFoundException();
     }
+    this.storeRealtime.notifyMenuChanged();
   }
 
   async listProductsAdmin() {
@@ -141,7 +147,7 @@ export class MenuService {
     if (!cat) {
       throw new NotFoundException('Category not found');
     }
-    return this.productModel.create({
+    const created = await this.productModel.create({
       categoryId: cat._id,
       name: body.name,
       description: body.description,
@@ -150,6 +156,8 @@ export class MenuService {
       sortIndex: body.sortIndex ?? 0,
       isAvailable: true,
     });
+    this.storeRealtime.notifyMenuChanged();
+    return created;
   }
 
   async updateProduct(
@@ -177,6 +185,7 @@ export class MenuService {
     }
     Object.assign(p, patch);
     await p.save();
+    this.storeRealtime.notifyMenuChanged();
     return p;
   }
 
@@ -191,6 +200,7 @@ export class MenuService {
       }
     }
     await this.productModel.deleteOne({ _id: res._id }).exec();
+    this.storeRealtime.notifyMenuChanged();
   }
 
   async getProductForOrder(productId: string): Promise<ProductDocument> {

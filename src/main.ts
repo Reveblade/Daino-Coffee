@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, RequestMethod, Logger } from '@nestjs/common';
+import { WsAdapter } from '@nestjs/platform-ws';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
@@ -28,6 +29,7 @@ function resolveCorsOrigin(): true | string[] {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.useWebSocketAdapter(new WsAdapter(app));
   app.use(helmet());
   app.enableCors({
     origin: resolveCorsOrigin(),

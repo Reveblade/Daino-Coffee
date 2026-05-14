@@ -16,6 +16,7 @@ import { CourierModule } from './modules/courier/courier.module';
 import { BootstrapModule } from './modules/bootstrap/bootstrap.module';
 import { SmsModule } from './modules/sms/sms.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
+import { StoreRealtimeModule } from './modules/store-realtime/store-realtime.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { UploadsModule } from './modules/uploads/uploads.module';
     OrdersModule,
     CourierModule,
     BootstrapModule,
+    StoreRealtimeModule,
   ],
   providers: [
     {

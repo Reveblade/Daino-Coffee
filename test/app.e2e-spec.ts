@@ -4,6 +4,7 @@ import {
   ValidationPipe,
   RequestMethod,
 } from '@nestjs/common';
+import { WsAdapter } from '@nestjs/platform-ws';
 import * as request from 'supertest';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import helmet from 'helmet';
@@ -32,6 +33,7 @@ describe('App (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.useWebSocketAdapter(new WsAdapter(app));
     app.use(helmet());
     app.enableCors({ origin: true, credentials: true });
     app.useGlobalPipes(

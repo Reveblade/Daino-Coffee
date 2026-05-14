@@ -7,6 +7,7 @@ import { ShopSettingsModule } from '../shop-settings/shop-settings.module';
 import { TablesModule } from '../tables/tables.module';
 import { MenuModule } from '../menu/menu.module';
 import { UsersModule } from '../users/users.module';
+import { OrdersStaffRealtimeModule } from '../orders-realtime/orders-staff-realtime.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { UsersModule } from '../users/users.module';
     TablesModule,
     MenuModule,
     UsersModule,
+    OrdersStaffRealtimeModule,
   ],
   providers: [OrdersService],
   controllers: [OrdersController],

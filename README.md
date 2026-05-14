@@ -72,6 +72,22 @@ npm run start:dev
 - Health: `GET http://localhost:3000/healthz` (no `/v1` prefix).
 - All business routes: **`/v1/...`**.
 
+### Orders WebSocket (staff)
+
+The **authority** staff app connects to **`ws(s)://<host>/ws/orders?token=<access_jwt>`** (same upgrade headers as nginx below). Only roles **ADMIN_OWNER**, **ADMIN**, **CASHIER**, and **COURIER** are accepted; the server pushes `{ "type": "orders" }` when any order is created or updated so the UI can refetch `GET /v1/orders` (or courier endpoints). Browsers cannot set `Authorization` on `WebSocket`, so the access token is passed as a query parameter (avoid logging full URLs).
+
+### Store WebSocket (native)
+
+The ordering app can open **`ws://localhost:3000/ws/store`** (or **`wss://`** when the API is served over HTTPS). This path is **not** under `/v1`. The server pushes small JSON messages such as `{ "type": "menu" }` or `{ "type": "shop" }` after admin menu changes or shop service toggles.
+
+If the API is behind **nginx** (or another reverse proxy), allow WebSocket upgrades on that location:
+
+```nginx
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+```
+
 ---
 
 ## Build (production)
@@ -97,6 +113,7 @@ Phones on auth and admin staff endpoints normalize to **E.164** `+905xxxxxxxx` f
 | Area | Routes |
 |------|--------|
 | Health | `GET /healthz` |
+| Realtime | WebSocket `ws(s)://<host>/ws/store` (public menu/shop); `ws(s)://<host>/ws/orders?token=<JWT>` (staff order list push) |
 | Auth | `POST /v1/auth/otp/request`, `otp/verify`, `owner/login` |
 | Users | `GET /v1/users/me`, addresses, favorites |
 | Admin | `GET/POST/DELETE /v1/admin/staff`, `GET /v1/admin/couriers` |

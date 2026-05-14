@@ -70,19 +70,17 @@ class AssignCourierDto {
 }
 
 @Controller('orders')
-@UseGuards(JwtAuthGuard)
 export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
+  /** Herkese açık: QR masa siparişi kullanıcı hesabına yazılmaz. */
   @Post('in-place')
-  createInPlace(
-    @CurrentUser() user: JwtPayload,
-    @Body() dto: CreateInPlaceOrderDto,
-  ) {
-    return this.orders.createInPlace(user, dto.tableSlug, dto.items);
+  createInPlace(@Body() dto: CreateInPlaceOrderDto) {
+    return this.orders.createInPlace(dto.tableSlug, dto.items);
   }
 
   @Post('online')
+  @UseGuards(JwtAuthGuard)
   createOnline(
     @CurrentUser() user: JwtPayload,
     @Body() dto: CreateOnlineOrderDto,
@@ -91,6 +89,7 @@ export class OrdersController {
   }
 
   @Get()
+  @UseGuards(JwtAuthGuard)
   list(
     @CurrentUser() user: JwtPayload,
     @Query('channel') channel?: OrderChannel,
@@ -109,11 +108,13 @@ export class OrdersController {
   }
 
   @Get(':id')
+  @UseGuards(JwtAuthGuard)
   getOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.orders.getOrder(user, id);
   }
 
   @Post(':id/in-place/transition')
+  @UseGuards(JwtAuthGuard)
   inPlaceTransition(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
@@ -123,6 +124,7 @@ export class OrdersController {
   }
 
   @Post(':id/online/transition')
+  @UseGuards(JwtAuthGuard)
   onlineTransition(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
@@ -132,6 +134,7 @@ export class OrdersController {
   }
 
   @Post(':id/assign-courier')
+  @UseGuards(JwtAuthGuard)
   assignCourier(
     @CurrentUser() user: JwtPayload,
     @Param('id') id: string,

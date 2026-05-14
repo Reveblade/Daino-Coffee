@@ -88,8 +88,9 @@ export class Order {
   @Prop({ required: true, index: true })
   status: string;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
-  customerId: Types.ObjectId;
+  /** Yalnızca web (ONLINE) siparişlerde dolu; QR masa siparişleri kullanıcıya bağlanmaz. */
+  @Prop({ type: Types.ObjectId, ref: 'User', index: true })
+  customerId?: Types.ObjectId;
 
   @Prop({ type: Types.ObjectId, ref: 'Table' })
   tableId?: Types.ObjectId;
