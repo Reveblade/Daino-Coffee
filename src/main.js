@@ -1,4 +1,11 @@
-import { api, decodeJwt, getToken, setToken } from './api.js';
+import {
+  api,
+  decodeJwt,
+  getRefreshToken,
+  getToken,
+  setToken,
+  uploadAdminImage,
+} from './api.js';
 
 /** @type {'login' | 'app'} */
 let screen = 'login';
@@ -12,6 +19,124 @@ function esc(s) {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function idStr(x) {
+  return String(x?._id ?? x ?? '');
+}
+
+/** @param {string} url @param {string | number} tableNumber */
+async function downloadQrImage(url, tableNumber) {
+  const name = `masa-${tableNumber}-qr.png`;
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error(String(res.status));
+    const blob = await res.blob();
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = name;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 2000);
+  } catch {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
+
+/** Two explicit steps (embedded / strict UAs may skip stacked `confirm()`). */
+function showQrRegenerateTwoStepDialog() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'a-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+
+    const panel = document.createElement('div');
+    panel.className = 'a-dialog';
+
+    const finish = (value) => {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(value);
+    };
+
+    /** @param {KeyboardEvent} e */
+    function onKey(e) {
+      if (e.key === 'Escape') finish(false);
+    }
+    document.addEventListener('keydown', onKey);
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) finish(false);
+    });
+
+    function step1() {
+      panel.innerHTML = `
+        <h2 class="a-dialog-title">QR yenileme</h2>
+        <p class="a-dialog-msg">QR kodu ve menü bağlantısı yenilenecek. Daha önce yazdırılmış QR kodları artık çalışmaz.</p>
+        <div class="a-dialog-actions">
+          <button type="button" class="a-btn secondary" data-act="cancel">İptal</button>
+          <button type="button" class="a-btn" data-act="next">Devam et</button>
+        </div>`;
+      panel.querySelector('[data-act="cancel"]').onclick = () => finish(false);
+      panel.querySelector('[data-act="next"]').onclick = () => step2();
+      requestAnimationFrame(() =>
+        /** @type {HTMLElement} */ (panel.querySelector('[data-act="next"]'))?.focus(),
+      );
+    }
+
+    function step2() {
+      panel.innerHTML = `
+        <h2 class="a-dialog-title">Son onay</h2>
+        <p class="a-dialog-msg">QR ve masa bağlantısı kalıcı olarak değişecek. Bu işlem geri alınamaz.</p>
+        <div class="a-dialog-actions">
+          <button type="button" class="a-btn secondary" data-act="cancel">İptal</button>
+          <button type="button" class="a-btn" data-act="ok">QR'ı yenile</button>
+        </div>`;
+      panel.querySelector('[data-act="cancel"]').onclick = () => finish(false);
+      panel.querySelector('[data-act="ok"]').onclick = () => finish(true);
+      requestAnimationFrame(() =>
+        /** @type {HTMLElement} */ (panel.querySelector('[data-act="ok"]'))?.focus(),
+      );
+    }
+
+    step1();
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+  });
+}
+
+function catPath(cat, cats) {
+  const parts = [];
+  let cur = cat;
+  const seen = new Set();
+  while (cur && !seen.has(idStr(cur))) {
+    seen.add(idStr(cur));
+    parts.unshift(cur.name);
+    const pid = cur.parentId;
+    cur = pid ? cats.find((c) => idStr(c) === idStr(pid)) : null;
+  }
+  return parts.join(' › ');
+}
+
+function parseTryToKurus(s) {
+  const n = parseFloat(String(s).trim().replace(',', '.'));
+  if (Number.isNaN(n) || n < 0) return null;
+  return Math.round(n * 100);
+}
+
+/** @returns {Promise<File | null>} */
+function pickImageFile() {
+  return new Promise((resolve) => {
+    const inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = 'image/*';
+    inp.onchange = () => resolve(inp.files?.[0] ?? null);
+    inp.click();
+  });
 }
 
 function role() {
@@ -447,7 +572,7 @@ async function renderTables(container) {
       <button type="button" class="a-btn" id="tb-add">Oluştur</button>
     </div>
     <table class="a-table">
-      <thead><tr><th>No</th><th>Slug</th><th>URL</th><th></th></tr></thead>
+      <thead><tr><th>No</th><th>Slug</th><th>URL</th><th>QR</th><th></th></tr></thead>
       <tbody>
         ${list
           .map(
@@ -455,6 +580,14 @@ async function renderTables(container) {
           <td>${esc(t.number)}</td>
           <td><code>${esc(t.publicSlug?.slice(0, 12))}…</code></td>
           <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis"><a href="${esc(t.menuUrl)}" target="_blank" rel="noopener">${esc(t.menuUrl)}</a></td>
+          <td class="a-qr-cell">${
+            t.qrImageUrl
+              ? `<div class="a-qr-wrap">
+            <img class="a-qr-thumb" src="${esc(t.qrImageUrl)}" alt="" width="72" height="72" />
+            <button type="button" class="a-btn secondary a-dlqr" data-url="${esc(t.qrImageUrl)}" data-num="${esc(String(t.number))}">Görseli indir</button>
+          </div>`
+              : '<span class="a-muted">—</span>'
+          }</td>
           <td>
             ${t.isSystem ? '<span class="a-muted">sistem</span>' : `<button type="button" class="a-btn secondary a-regqr" data-id="${esc(String(t._id))}">QR yenile</button>
             <button type="button" class="a-btn secondary a-delt" data-id="${esc(String(t._id))}">Sil</button>`}
@@ -478,8 +611,17 @@ async function renderTables(container) {
       alert(e.message);
     }
   };
+  container.querySelectorAll('.a-dlqr').forEach((b) => {
+    b.onclick = () => {
+      const { url, num } = b.dataset;
+      if (!url) return;
+      void downloadQrImage(url, num ?? '');
+    };
+  });
   container.querySelectorAll('.a-regqr').forEach((b) => {
     b.onclick = async () => {
+      const ok = await showQrRegenerateTwoStepDialog();
+      if (!ok) return;
       try {
         await api(`/admin/tables/${b.dataset.id}/regenerate-qr`, {
           method: 'POST',
@@ -503,7 +645,7 @@ async function renderTables(container) {
   });
 }
 
-async function renderMenuReadonly(container) {
+async function renderMenuAdmin(container) {
   let cats = [];
   let prods = [];
   try {
@@ -513,19 +655,257 @@ async function renderMenuReadonly(container) {
     container.innerHTML = `<p class="a-error">${esc(e.message)}</p>`;
     return;
   }
+  if (!Array.isArray(cats)) cats = [];
+  if (!Array.isArray(prods)) prods = [];
+
+  const catsSorted = [...cats].sort((a, b) =>
+    catPath(a, cats).localeCompare(catPath(b, cats), 'tr'),
+  );
+  const catOpts = catsSorted
+    .map(
+      (c) =>
+        `<option value="${esc(idStr(c))}">${esc(catPath(c, cats))}</option>`,
+    )
+    .join('');
+  const parentOpts =
+    `<option value="">— Üst kategori yok —</option>` +
+    catsSorted
+      .map(
+        (c) =>
+          `<option value="${esc(idStr(c))}">${esc(catPath(c, cats))}</option>`,
+      )
+      .join('');
+
+  const catRows = catsSorted
+    .map((c) => {
+      const id = esc(idStr(c));
+      const thumb = c.imageUrl
+        ? `<img src="${esc(c.imageUrl)}" alt="" class="a-menu-thumb" />`
+        : '<span class="a-muted">—</span>';
+      return `<tr>
+        <td>${esc(catPath(c, cats))}</td>
+        <td style="text-align:center;width:64px">${thumb}</td>
+        <td>${c.sortIndex ?? 0}</td>
+        <td style="white-space:nowrap">
+          <button type="button" class="a-btn secondary a-menu-cat-img" data-id="${id}">Kategori görseli</button>
+          <button type="button" class="a-btn secondary a-menu-del-cat" data-id="${id}">Sil</button>
+        </td>
+      </tr>`;
+    })
+    .join('');
+
+  const prodRows = [...prods]
+    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'tr'))
+    .map((p) => {
+      const cat = cats.find((c) => idStr(c) === idStr(p.categoryId));
+      const cname = cat ? catPath(cat, cats) : '—';
+      const pid = esc(idStr(p));
+      const avail = p.isAvailable !== false;
+      const pthumb = p.images?.[0]?.url
+        ? `<img src="${esc(p.images[0].url)}" alt="" class="a-menu-thumb" />`
+        : '<span class="a-muted">—</span>';
+      return `<tr>
+        <td style="text-align:center;width:64px">${pthumb}</td>
+        <td>${esc(p.name)}</td>
+        <td class="a-muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(cname)}</td>
+        <td>${(Number(p.priceKurus) / 100).toFixed(2)} ₺</td>
+        <td>${avail ? 'satışta' : 'kapalı'}</td>
+        <td style="white-space:nowrap">
+          <button type="button" class="a-btn secondary a-menu-prod-img" data-id="${pid}">Ürün görseli</button>
+          <button type="button" class="a-btn secondary a-menu-toggle-p" data-id="${pid}">${avail ? 'Kapat' : 'Aç'}</button>
+          <button type="button" class="a-btn secondary a-menu-del-p" data-id="${pid}">Sil</button>
+        </td>
+      </tr>`;
+    })
+    .join('');
+
   container.innerHTML = `
-    <h1 class="a-h1">Menü (özet)</h1>
-    <p class="a-muted">Ürün ve kategori yönetimi REST ile yapılır; burada salt okunur liste.</p>
-    <p><strong>${prods.length}</strong> ürün, <strong>${cats.length}</strong> kategori.</p>
-    <ul style="margin:12px 0;padding-left:18px;max-height:50vh;overflow:auto">
-      ${prods
-        .slice(0, 80)
-        .map(
-          (p) =>
-            `<li>${esc(p.name)} — ${(p.priceKurus / 100).toFixed(2)} ₺ — ${p.isAvailable ? 'satışta' : 'kapalı'}</li>`,
-        )
-        .join('')}
-    </ul>`;
+    <h1 class="a-h1">Menü</h1>
+    <p class="a-muted">Kategori ve ürün ekleyin; alt kategori için üst kategori seçin. Fiyatı Türk Lirası olarak girin (ör. 45,50).</p>
+
+    <div class="a-card" style="margin-bottom:16px">
+      <strong>Yeni kategori</strong>
+      <label class="a-muted" style="display:block;margin-top:8px">Ad</label>
+      <input class="a-input" id="menu-cat-name" placeholder="Örn. İçecekler" />
+      <label class="a-muted" style="display:block;margin-top:8px">Açıklama (opsiyonel)</label>
+      <input class="a-input" id="menu-cat-desc" placeholder="" />
+      <label class="a-muted" style="display:block;margin-top:8px">Üst kategori (alt kategori için)</label>
+      <select class="a-select" id="menu-cat-parent">${parentOpts}</select>
+      <label class="a-muted" style="display:block;margin-top:8px">Sıra</label>
+      <input class="a-input" id="menu-cat-sort" type="number" value="0" style="max-width:120px" />
+      <button type="button" class="a-btn" style="margin-top:10px" id="menu-cat-add">Kategori ekle</button>
+    </div>
+
+    <div class="a-card" style="margin-bottom:16px">
+      <strong>Yeni ürün</strong>
+      <label class="a-muted" style="display:block;margin-top:8px">Kategori</label>
+      <select class="a-select" id="menu-prod-cat">${catOpts}</select>
+      <label class="a-muted" style="display:block;margin-top:8px">Ad</label>
+      <input class="a-input" id="menu-prod-name" placeholder="Ürün adı" />
+      <label class="a-muted" style="display:block;margin-top:8px">Açıklama (opsiyonel)</label>
+      <input class="a-input" id="menu-prod-desc" placeholder="" />
+      <label class="a-muted" style="display:block;margin-top:8px">Fiyat (₺)</label>
+      <input class="a-input" id="menu-prod-price" placeholder="12,50" style="max-width:160px" />
+      <label class="a-muted" style="display:block;margin-top:8px">Sıra</label>
+      <input class="a-input" id="menu-prod-sort" type="number" value="0" style="max-width:120px" />
+      <button type="button" class="a-btn" style="margin-top:10px" id="menu-prod-add">Ürün ekle</button>
+    </div>
+
+    <h2 class="a-h1" style="font-size:1.15rem">Kategoriler (${cats.length})</h2>
+    <div style="overflow:auto;margin-bottom:24px">
+      <table class="a-table">
+        <thead><tr><th>Kategori</th><th>Görsel</th><th>Sıra</th><th></th></tr></thead>
+        <tbody>${catRows || '<tr><td colspan="4" class="a-muted">Kayıt yok</td></tr>'}</tbody>
+      </table>
+    </div>
+
+    <h2 class="a-h1" style="font-size:1.15rem">Ürünler (${prods.length})</h2>
+    <div style="overflow:auto">
+      <table class="a-table">
+        <thead><tr><th>Görsel</th><th>Ad</th><th>Kategori</th><th>Fiyat</th><th>Durum</th><th></th></tr></thead>
+        <tbody>${prodRows || '<tr><td colspan="6" class="a-muted">Kayıt yok</td></tr>'}</tbody>
+      </table>
+    </div>`;
+
+  container.querySelector('#menu-cat-add').onclick = async () => {
+    const name = container.querySelector('#menu-cat-name').value.trim();
+    if (!name) {
+      alert('Kategori adı gerekli.');
+      return;
+    }
+    const description =
+      container.querySelector('#menu-cat-desc').value.trim() || undefined;
+    const parentVal = container.querySelector('#menu-cat-parent').value.trim();
+    const sortIndex = Number(container.querySelector('#menu-cat-sort').value);
+    try {
+      await api('/admin/menu/categories', {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          description,
+          parentId: parentVal || undefined,
+          sortIndex: Number.isFinite(sortIndex) ? sortIndex : 0,
+        }),
+      });
+      await renderMenuAdmin(container);
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  container.querySelector('#menu-prod-add').onclick = async () => {
+    const categoryId = container.querySelector('#menu-prod-cat').value;
+    const name = container.querySelector('#menu-prod-name').value.trim();
+    const description =
+      container.querySelector('#menu-prod-desc').value.trim() || undefined;
+    const kurus = parseTryToKurus(container.querySelector('#menu-prod-price').value);
+    const sortIndex = Number(container.querySelector('#menu-prod-sort').value);
+    if (!categoryId) {
+      alert('Kategori seçin.');
+      return;
+    }
+    if (!name) {
+      alert('Ürün adı gerekli.');
+      return;
+    }
+    if (kurus === null) {
+      alert('Geçerli bir fiyat girin.');
+      return;
+    }
+    try {
+      await api('/admin/menu/products', {
+        method: 'POST',
+        body: JSON.stringify({
+          categoryId,
+          name,
+          description,
+          priceKurus: kurus,
+          sortIndex: Number.isFinite(sortIndex) ? sortIndex : 0,
+        }),
+      });
+      await renderMenuAdmin(container);
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
+  container.querySelectorAll('.a-menu-cat-img').forEach((b) => {
+    b.onclick = async () => {
+      const file = await pickImageFile();
+      if (!file) return;
+      try {
+        const up = await uploadAdminImage(file);
+        await api(`/admin/menu/categories/${b.dataset.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ imageUrl: up.url }),
+        });
+        await renderMenuAdmin(container);
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+  });
+
+  container.querySelectorAll('.a-menu-prod-img').forEach((b) => {
+    b.onclick = async () => {
+      const file = await pickImageFile();
+      if (!file) return;
+      const row = prods.find((p) => idStr(p) === b.dataset.id);
+      try {
+        const up = await uploadAdminImage(file);
+        const prev = Array.isArray(row?.images) ? [...row.images] : [];
+        await api(`/admin/menu/products/${b.dataset.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            images: [...prev, { url: up.url, publicId: up.publicId }],
+          }),
+        });
+        await renderMenuAdmin(container);
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+  });
+
+  container.querySelectorAll('.a-menu-del-cat').forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm('Bu kategori silinsin mi? (Alt kategori veya ürün varsa silinmez.)')) return;
+      try {
+        await api(`/admin/menu/categories/${b.dataset.id}`, { method: 'DELETE' });
+        await renderMenuAdmin(container);
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+  });
+
+  container.querySelectorAll('.a-menu-del-p').forEach((b) => {
+    b.onclick = async () => {
+      if (!confirm('Bu ürün silinsin mi?')) return;
+      try {
+        await api(`/admin/menu/products/${b.dataset.id}`, { method: 'DELETE' });
+        await renderMenuAdmin(container);
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+  });
+
+  container.querySelectorAll('.a-menu-toggle-p').forEach((b) => {
+    b.onclick = async () => {
+      const row = prods.find((p) => idStr(p) === b.dataset.id);
+      const next = !(row && row.isAvailable !== false);
+      try {
+        await api(`/admin/menu/products/${b.dataset.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ isAvailable: next }),
+        });
+        await renderMenuAdmin(container);
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+  });
 }
 
 async function renderMain() {
@@ -539,7 +919,7 @@ async function renderMain() {
   } else if (view === 'shop' && isCashierPlus()) await renderShop(main);
   else if (view === 'staff' && isAdmin()) await renderStaff(main);
   else if (view === 'tables' && isAdmin()) await renderTables(main);
-  else if (view === 'menu' && isAdmin()) await renderMenuReadonly(main);
+  else if (view === 'menu' && isAdmin()) await renderMenuAdmin(main);
   else {
     const fallback = isCourier() ? 'courier' : 'orders';
     if (view !== fallback) {
@@ -559,7 +939,7 @@ function renderApp(root) {
     ? `${navButton('Görevler', 'courier')}`
     : `${navButton('Siparişler', 'orders')}
        ${isCashierPlus() ? navButton('Mağaza', 'shop') : ''}
-       ${isAdmin() ? navButton('Personel', 'staff') + navButton('Masalar', 'tables') + navButton('Menü özeti', 'menu') : ''}`;
+       ${isAdmin() ? navButton('Personel', 'staff') + navButton('Masalar', 'tables') + navButton('Menü', 'menu') : ''}`;
 
   root.innerHTML = `
     <div class="a-layout">
@@ -601,7 +981,8 @@ function renderApp(root) {
 
 function render() {
   const root = document.getElementById('root');
-  if (!getToken()) screen = 'login';
+  const hasSession = Boolean(getToken() || getRefreshToken());
+  screen = hasSession ? 'app' : 'login';
   if (screen === 'login') {
     clearPoll();
     renderLogin(root);

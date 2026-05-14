@@ -70,6 +70,55 @@ async function refreshSession() {
   setToken(body.accessToken, body.refreshToken);
 }
 
+/**
+ * @param {File} file
+ * @param {boolean} [isRetry]
+ * @returns {Promise<{ url: string, publicId?: string }>}
+ */
+export async function uploadAdminImage(file, isRetry = false) {
+  const url = `${getApiBase()}/admin/uploads/image`;
+  const fd = new FormData();
+  fd.append('file', file);
+  /** @type {Record<string, string>} */
+  const headers = {};
+  const tok = getToken();
+  if (tok) headers.Authorization = `Bearer ${tok}`;
+  const res = await fetch(url, { method: 'POST', headers, body: fd });
+  const text = await res.text();
+  let body;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = { message: text };
+  }
+
+  if (res.status === 401 && !isRetry && getRefreshToken()) {
+    try {
+      if (!refreshPromise) {
+        refreshPromise = refreshSession().finally(() => {
+          refreshPromise = null;
+        });
+      }
+      await refreshPromise;
+      return uploadAdminImage(file, true);
+    } catch {
+      /* fall through */
+    }
+  }
+
+  if (!res.ok) {
+    const err = new Error(
+      Array.isArray(body?.message)
+        ? body.message.join(', ')
+        : body?.message ?? res.statusText,
+    );
+    err.status = res.status;
+    err.body = body;
+    throw err;
+  }
+  return body;
+}
+
 export async function api(path, opts = {}, isRetry = false) {
   const url = `${getApiBase()}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = {
