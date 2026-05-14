@@ -6,12 +6,17 @@ import {
   setToken,
   uploadAdminImage,
 } from './api.js';
+import { connectOrdersStaffRealtime } from './orders-realtime.js';
 
 /** @type {'login' | 'app'} */
 let screen = 'login';
 /** @type {string} */
 let view = 'orders';
 let pollTimer = null;
+/** @type {(() => void) | null} */
+let stopOrdersWs = null;
+/** True while staff orders WebSocket is connected (disables fast HTTP polling). */
+let ordersWsLive = false;
 
 function esc(s) {
   return String(s ?? '')
@@ -23,6 +28,141 @@ function esc(s) {
 
 function idStr(x) {
   return String(x?._id ?? x ?? '');
+}
+
+function channelLabelTr(ch) {
+  if (ch === 'IN_PLACE') return 'Masa (QR)';
+  if (ch === 'ONLINE') return 'Teslimat (web)';
+  return String(ch ?? '');
+}
+
+function inPlaceStatusTr(st) {
+  const m = {
+    PLACED: 'Alındı',
+    IN_PROGRESS: 'Hazırlanıyor',
+    READY: 'Teslim edildi',
+    AWAITING_PAYMENT: 'Ödeme bekliyor',
+    PAID: 'Ödendi',
+    CANCELLED: 'İptal edildi',
+  };
+  return m[st] ?? String(st ?? '');
+}
+
+function onlineStatusTr(st) {
+  const m = {
+    PLACED: 'Alındı',
+    CONFIRMED: 'Onaylandı',
+    IN_PROGRESS: 'Hazırlanıyor',
+    READY_FOR_HANDOFF: 'Kuryeye hazır',
+    ASSIGNED: 'Kurye atandı',
+    OUT_FOR_DELIVERY: 'Yolda',
+    DELIVERED: 'Teslim edildi',
+    AWAITING_CASHIER_PAYMENT: 'Ödeme bekliyor',
+    PAID: 'Ödendi',
+    CANCELLED: 'İptal edildi',
+  };
+  return m[st] ?? String(st ?? '');
+}
+
+/** @param {string} st @returns {{ act: string, label: string }[]} */
+function inPlaceActions(st) {
+  if (st === 'PAID' || st === 'CANCELLED') return [];
+  if (st === 'PLACED')
+    return [
+      { act: 'START', label: 'Hazırla' },
+      { act: 'CANCEL', label: 'İptal et' },
+    ];
+  if (st === 'IN_PROGRESS')
+    return [
+      { act: 'READY', label: 'Teslim edildi' },
+      { act: 'CANCEL', label: 'İptal et' },
+    ];
+  if (st === 'READY')
+    return [
+      { act: 'AWAIT_PAYMENT', label: 'Ödeme bekliyor' },
+      { act: 'MARK_PAID', label: 'Ödendi' },
+      { act: 'CANCEL', label: 'İptal et' },
+    ];
+  if (st === 'AWAITING_PAYMENT')
+    return [
+      { act: 'MARK_PAID', label: 'Ödendi' },
+      { act: 'CANCEL', label: 'İptal et' },
+    ];
+  return [];
+}
+
+/** @param {string} st @returns {{ act: string, label: string }[]} */
+function onlineStaffActions(st) {
+  if (st === 'PAID' || st === 'CANCELLED') return [];
+  if (st === 'PLACED')
+    return [
+      { act: 'CONFIRM', label: 'Onayla' },
+      { act: 'CANCEL', label: 'İptal et' },
+    ];
+  if (st === 'CONFIRMED')
+    return [
+      { act: 'START_PREP', label: 'Hazırla' },
+      { act: 'CANCEL', label: 'İptal et' },
+    ];
+  if (st === 'IN_PROGRESS')
+    return [
+      { act: 'READY_HANDOFF', label: 'Teslime hazır' },
+      { act: 'CANCEL', label: 'İptal et' },
+    ];
+  if (st === 'READY_FOR_HANDOFF')
+    return [{ act: 'CANCEL', label: 'İptal et' }];
+  if (st === 'AWAITING_CASHIER_PAYMENT')
+    return [
+      { act: 'MARK_PAID', label: 'Ödendi' },
+      { act: 'CANCEL', label: 'İptal et' },
+    ];
+  return [];
+}
+
+function tableNumberCell(o) {
+  const t = o.tableId;
+  if (t && typeof t === 'object') {
+    if (t.number != null) return esc(`Masa ${t.number}`);
+    if (t.label) return esc(String(t.label));
+  }
+  return '—';
+}
+
+function orderItemsSummary(o) {
+  if (!Array.isArray(o.items) || !o.items.length) return '—';
+  let units = 0;
+  for (const i of o.items) units += Number(i.quantity) || 0;
+  const lines = o.items.length;
+  const addCount = Array.isArray(o.history)
+    ? o.history.filter((h) => h?.note === 'IN_PLACE_ITEMS_ADDED').length
+    : 0;
+  const extra =
+    o.channel === 'IN_PLACE' && addCount > 0 ? ` · ${addCount} ek` : '';
+  return `${lines} kalem, ${units} adet${extra}`;
+}
+
+/** @returns {{ text: string, title: string }} */
+function latestInPlaceAdditionDisplay(o) {
+  if (o.channel !== 'IN_PLACE' || !Array.isArray(o.history)) {
+    return { text: '', title: '' };
+  }
+  const adds = o.history.filter((h) => h?.note === 'IN_PLACE_ITEMS_ADDED');
+  if (!adds.length) return { text: '', title: '' };
+  const last = adds[adds.length - 1];
+  const meta = last?.metadata?.addedItems;
+  const line = Array.isArray(meta)
+    ? meta.map((a) => `${a.quantity}×${a.name}`).join(', ')
+    : '';
+  const full = adds
+    .slice(-5)
+    .map((h) => {
+      const m = h?.metadata?.addedItems;
+      return Array.isArray(m) ? m.map((a) => `${a.quantity}×${a.name}`).join(', ') : '';
+    })
+    .filter(Boolean)
+    .join(' → ');
+  const short = line.length > 52 ? `${line.slice(0, 49)}…` : line;
+  return { text: short, title: full || line };
 }
 
 /** @param {string} url @param {string | number} tableNumber */
@@ -170,10 +310,30 @@ function clearPoll() {
   }
 }
 
+function stopOrdersRealtime() {
+  if (stopOrdersWs) {
+    stopOrdersWs();
+    stopOrdersWs = null;
+  }
+  ordersWsLive = false;
+}
+
+function applyView(nextView) {
+  view = nextView;
+  const root = document.getElementById('root');
+  if (root && screen === 'app') {
+    root.querySelectorAll('[data-view]').forEach((b) => {
+      b.classList.toggle('active', b.dataset.view === view);
+    });
+  }
+  renderMain().catch(console.error);
+}
+
 function startPoll() {
   clearPoll();
   if (screen !== 'app') return;
   pollTimer = setInterval(() => {
+    if (ordersWsLive) return;
     if (view === 'orders' || view === 'courier') renderMain();
   }, 8000);
 }
@@ -296,38 +456,53 @@ async function renderOrders(container) {
   const rows = orders
     .map((o) => {
       const id = esc(o._id);
-      const ch = esc(o.channel);
-      const st = esc(o.status);
+      const ch = o.channel;
+      const chLabel = esc(channelLabelTr(ch));
+      const stRaw = esc(o.status);
+      const stLabel =
+        ch === 'IN_PLACE'
+          ? esc(inPlaceStatusTr(o.status))
+          : esc(onlineStatusTr(o.status));
+      const masa = ch === 'IN_PLACE' ? tableNumberCell(o) : '—';
+      const itemsSummary = esc(orderItemsSummary(o));
+      const addDisp = latestInPlaceAdditionDisplay(o);
+      const sonEk =
+        ch === 'IN_PLACE' && addDisp.text
+          ? `<span class="a-muted" title="${esc(addDisp.title)}">${esc(addDisp.text)}</span>`
+          : '—';
       let actions = '';
       if (o.channel === 'IN_PLACE') {
-        actions = `
-          <button class="a-btn secondary a-act" data-id="${id}" data-ch="IN_PLACE" data-act="START">Hazırla</button>
-          <button class="a-btn secondary a-act" data-id="${id}" data-ch="IN_PLACE" data-act="READY">Hazır</button>
-          <button class="a-btn secondary a-act" data-id="${id}" data-ch="IN_PLACE" data-act="AWAIT_PAYMENT">Ödeme bekliyor</button>
-          <button class="a-btn secondary a-act" data-id="${id}" data-ch="IN_PLACE" data-act="MARK_PAID">Ödendi</button>
-          <button class="a-btn secondary a-act" data-id="${id}" data-ch="IN_PLACE" data-act="CANCEL">İptal</button>`;
+        actions = inPlaceActions(o.status)
+          .map(
+            ({ act, label }) =>
+              `<button type="button" class="a-btn secondary a-act" data-id="${id}" data-ch="IN_PLACE" data-act="${esc(act)}">${esc(label)}</button>`,
+          )
+          .join(' ');
       } else {
-        actions = `
-          <button class="a-btn secondary a-act" data-id="${id}" data-ch="ONLINE" data-act="CONFIRM">Onayla</button>
-          <button class="a-btn secondary a-act" data-id="${id}" data-ch="ONLINE" data-act="START_PREP">Hazırlık</button>
-          <button class="a-btn secondary a-act" data-id="${id}" data-ch="ONLINE" data-act="READY_HANDOFF">Teslime hazır</button>
-          <button class="a-btn secondary a-act" data-id="${id}" data-ch="ONLINE" data-act="MARK_PAID">Nakit ödeme onayı</button>
-          <button class="a-btn secondary a-act" data-id="${id}" data-ch="ONLINE" data-act="CANCEL">İptal</button>
+        actions = onlineStaffActions(o.status)
+          .map(
+            ({ act, label }) =>
+              `<button type="button" class="a-btn secondary a-act" data-id="${id}" data-ch="ONLINE" data-act="${esc(act)}">${esc(label)}</button>`,
+          )
+          .join(' ');
+        if (o.status === 'READY_FOR_HANDOFF') {
+          actions += `
           <span class="a-muted">Kurye:</span>
           <select class="a-select a-courier-sel" data-id="${id}" style="max-width:160px;display:inline-block;width:auto"></select>
-          <button class="a-btn a-assign" data-id="${id}">Kurye ata</button>`;
+          <button type="button" class="a-btn a-assign" data-id="${id}">Kurye ata</button>`;
+        }
       }
-      return `<tr><td><code>${id.slice(-8)}</code></td><td><span class="a-badge">${ch}</span></td><td>${st}</td><td style="text-align:right;white-space:nowrap">${actions}</td></tr>`;
+      return `<tr><td><code>${id.slice(-8)}</code></td><td><span class="a-badge">${chLabel}</span></td><td>${masa}</td><td>${itemsSummary}</td><td>${sonEk}</td><td><span title="${stRaw}">${stLabel}</span></td><td style="text-align:right;white-space:nowrap">${actions}</td></tr>`;
     })
     .join('');
 
   container.innerHTML = `
     <h1 class="a-h1">Siparişler</h1>
-    <p class="a-muted">Liste birkaç saniyede bir yenilenebilir; ayrıca sayfayı yenileyin.</p>
+    <p class="a-muted">Liste WebSocket ile anlık güncellenir; bağlantı yoksa birkaç saniyede bir REST ile yenilenir.</p>
     <div style="overflow:auto">
       <table class="a-table">
-        <thead><tr><th>ID</th><th>Kanal</th><th>Durum</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="4" class="a-muted">Kayıt yok</td></tr>'}</tbody>
+        <thead><tr><th>ID</th><th>Kanal</th><th>Masa</th><th>Ürünler</th><th>Son ek</th><th>Durum</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="7" class="a-muted">Kayıt yok</td></tr>'}</tbody>
       </table>
     </div>`;
 
@@ -933,6 +1108,7 @@ async function renderMain() {
 
 function renderApp(root) {
   clearPoll();
+  stopOrdersRealtime();
   if (isCourier()) view = 'courier';
   const r = role();
   const sideNav = isCourier()
@@ -957,26 +1133,32 @@ function renderApp(root) {
 
   const mnav = root.querySelector('#a-mnav');
   mnav.innerHTML = sideNav;
-  mnav.querySelectorAll('[data-view]').forEach((b) => {
-    b.onclick = () => {
-      view = b.dataset.view;
-      render();
-    };
-  });
-  root.querySelectorAll('.a-side [data-view]').forEach((b) => {
-    b.onclick = () => {
-      view = b.dataset.view;
-      render();
-    };
+  root.querySelectorAll('[data-view]').forEach((b) => {
+    b.onclick = () => applyView(b.dataset.view);
   });
   root.querySelector('#a-logout').onclick = () => {
     setToken(null);
     screen = 'login';
     clearPoll();
+    stopOrdersRealtime();
     render();
   };
 
-  renderMain().then(() => startPoll());
+  renderMain()
+    .then(() => {
+      stopOrdersWs = connectOrdersStaffRealtime({
+        onOrdersPush: () => {
+          if (screen === 'app' && (view === 'orders' || view === 'courier')) {
+            renderMain().catch(console.error);
+          }
+        },
+        onConnectionChange: (open) => {
+          ordersWsLive = Boolean(open);
+        },
+      });
+      startPoll();
+    })
+    .catch(console.error);
 }
 
 function render() {
@@ -985,6 +1167,7 @@ function render() {
   screen = hasSession ? 'app' : 'login';
   if (screen === 'login') {
     clearPoll();
+    stopOrdersRealtime();
     renderLogin(root);
   } else {
     renderApp(root);

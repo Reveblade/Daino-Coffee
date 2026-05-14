@@ -10,8 +10,8 @@ Lightweight **Vite + vanilla JS** SPA for **in-store and delivery operations**: 
 
 | Role | Capabilities in the UI |
 |------|-------------------------|
-| **Courier** | View current assigned order; **Yola çıktım**; **Teslim + POS** / **Teslim + nakit**; delivery history |
-| **Cashier / Admin** | List orders (`GET /v1/orders`); in-place & online **state transitions**; **assign courier** when online order is ready; **toggle shop “service”** (table ordering on/off) |
+| **Courier** | View current assigned order (same **WebSocket** + REST fallback as orders list); **Yola çıktım**; **Teslim + POS** / **Teslim + nakit**; delivery history |
+| **Cashier / Admin** | List orders (`GET /v1/orders`) with **WebSocket** push (`/ws/orders?token=…`) for live updates, plus 8s REST fallback when WS is down; in-place & online **state transitions**; **assign courier** when online order is ready; **toggle shop “service”** (table ordering on/off) |
 | **Admin only** | **Staff** list/create/delete; **Tables** list, create, QR regenerate, delete (non-system); **Menu** read-only summary |
 
 ### Login modes

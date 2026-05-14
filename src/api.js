@@ -8,6 +8,22 @@ export function getApiBase() {
   return raw.replace(/\/$/, '');
 }
 
+/** Native WS for staff order list push (`/ws/orders?token=…`). */
+export function getOrdersWsUrl() {
+  const explicit = import.meta.env.VITE_ORDERS_WS_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, '');
+  const base = getApiBase();
+  try {
+    const httpUrl = new URL(
+      /^https?:\/\//i.test(base) ? base : `http://${base}`,
+    );
+    const wsProto = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${wsProto}//${httpUrl.host}/ws/orders`;
+  } catch {
+    return 'ws://localhost:3000/ws/orders';
+  }
+}
+
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
