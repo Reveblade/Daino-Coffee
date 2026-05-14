@@ -80,6 +80,32 @@ class CreateProductDto {
   sortIndex?: number;
 }
 
+class PatchCategoryDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  parentId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  sortIndex?: number;
+
+  @IsOptional()
+  @IsString()
+  imageUrl?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
 class PatchProductDto {
   @IsOptional()
   @IsString()
@@ -134,6 +160,13 @@ export class MenuController {
   @Roles(UserRole.ADMIN_OWNER, UserRole.ADMIN)
   createCategory(@Body() dto: CreateCategoryDto) {
     return this.menu.createCategory(dto);
+  }
+
+  @Patch('admin/menu/categories/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN_OWNER, UserRole.ADMIN)
+  patchCategory(@Param('id') id: string, @Body() dto: PatchCategoryDto) {
+    return this.menu.updateCategory(id, dto);
   }
 
   @Delete('admin/menu/categories/:id')

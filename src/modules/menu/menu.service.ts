@@ -62,6 +62,47 @@ export class MenuService {
     });
   }
 
+  async updateCategory(
+    id: string,
+    patch: Partial<{
+      name: string;
+      description: string;
+      sortIndex: number;
+      imageUrl: string;
+      isActive: boolean;
+      parentId: string | null;
+    }>,
+  ) {
+    if (!Types.ObjectId.isValid(id)) {
+      throw new NotFoundException();
+    }
+    const c = await this.categoryModel.findById(id).exec();
+    if (!c) {
+      throw new NotFoundException();
+    }
+    if (patch.parentId !== undefined) {
+      if (patch.parentId === null || patch.parentId === '') {
+        c.parentId = undefined;
+      } else {
+        if (patch.parentId === id) {
+          throw new BadRequestException('Category cannot be its own parent');
+        }
+        const p = await this.categoryModel.findById(patch.parentId).exec();
+        if (!p) {
+          throw new NotFoundException('Parent category not found');
+        }
+        c.parentId = p._id;
+      }
+    }
+    if (patch.name !== undefined) c.name = patch.name;
+    if (patch.description !== undefined) c.description = patch.description;
+    if (patch.sortIndex !== undefined) c.sortIndex = patch.sortIndex;
+    if (patch.imageUrl !== undefined) c.imageUrl = patch.imageUrl;
+    if (patch.isActive !== undefined) c.isActive = patch.isActive;
+    await c.save();
+    return c;
+  }
+
   async deleteCategory(id: string) {
     if (!Types.ObjectId.isValid(id)) {
       throw new NotFoundException();

@@ -3,6 +3,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { Category, CategorySchema } from './schemas/category.schema';
 import { Product, ProductSchema } from './schemas/product.schema';
 import { MenuService } from './menu.service';
+import { MenuSeedService } from './menu-seed.service';
 import { MenuController } from './menu.controller';
 
 @Module({
@@ -12,7 +13,7 @@ import { MenuController } from './menu.controller';
       { name: Product.name, schema: ProductSchema },
     ]),
   ],
-  providers: [MenuService],
+  providers: [MenuService, MenuSeedService],
   controllers: [MenuController],
   exports: [MenuService],
 })

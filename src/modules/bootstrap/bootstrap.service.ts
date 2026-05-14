@@ -18,6 +18,7 @@ export class BootstrapService implements OnApplicationBootstrap {
   async onApplicationBootstrap(): Promise<void> {
     await this.shopSettings.getSingleton();
     await this.tablesService.ensureStorefrontTable();
+    await this.tablesService.syncMenuUrlsToPublicBase();
     const ownerPhone = this.config.get<string>('owner.phoneE164');
     const ownerPassword = this.config.get<string>('owner.password');
     if (ownerPhone && ownerPassword) {

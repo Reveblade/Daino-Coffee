@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -17,6 +18,8 @@ import * as QRCode from 'qrcode';
 
 @Injectable()
 export class TablesService {
+  private readonly logger = new Logger(TablesService.name);
+
   constructor(
     @InjectModel(Table.name) private readonly tableModel: Model<TableDocument>,
     private readonly config: ConfigService,
@@ -29,11 +32,42 @@ export class TablesService {
       .replace(/\/$/, '');
   }
 
+  private menuUrlForSlug(publicSlug: string): string {
+    return `${this.baseUrl()}/t/${publicSlug}`;
+  }
+
+  /**
+   * Recompute stored menu URLs when MENU_PUBLIC_BASE_URL changes (e.g. dev host or production domain).
+   */
+  async syncMenuUrlsToPublicBase(): Promise<void> {
+    const tables = await this.tableModel.find().exec();
+    let updated = 0;
+    for (const t of tables) {
+      const nextUrl = this.menuUrlForSlug(t.publicSlug);
+      if (t.menuUrl === nextUrl) continue;
+      t.menuUrl = nextUrl;
+      if (this.uploads.isConfigured()) {
+        try {
+          await this.refreshQrImage(t);
+        } catch {
+          /* optional asset */
+        }
+      }
+      await t.save();
+      updated += 1;
+    }
+    if (updated > 0) {
+      this.logger.log(
+        `Synced ${updated} table menu URL(s) to MENU_PUBLIC_BASE_URL`,
+      );
+    }
+  }
+
   async ensureStorefrontTable(): Promise<TableDocument> {
     let t = await this.tableModel.findOne({ number: 0 }).exec();
     if (!t) {
       const slug = generateTableSlug();
-      const menuUrl = `${this.baseUrl()}/t/${slug}`;
+      const menuUrl = this.menuUrlForSlug(slug);
       t = await this.tableModel.create({
         number: 0,
         label: 'Storefront',
@@ -71,7 +105,7 @@ export class TablesService {
       throw new ConflictException('Table number already exists');
     }
     const slug = generateTableSlug();
-    const menuUrl = `${this.baseUrl()}/t/${slug}`;
+    const menuUrl = this.menuUrlForSlug(slug);
     const table = await this.tableModel.create({
       number,
       label,
@@ -116,7 +150,7 @@ export class TablesService {
     }
     const slug = generateTableSlug();
     t.publicSlug = slug;
-    t.menuUrl = `${this.baseUrl()}/t/${slug}`;
+    t.menuUrl = this.menuUrlForSlug(slug);
     await this.refreshQrImage(t);
     await t.save();
     return t;
