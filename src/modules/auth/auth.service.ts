@@ -1,0 +1,125 @@
+import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
+import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
+import { ConfigService } from '@nestjs/config';
+import {
+  isValidTurkishMobileE164,
+  normalizeTurkishMobile,
+} from '../../common/utils/phone.util';
+import { UsersService } from '../users/users.service';
+import { UserRole } from '../users/schemas/user.schema';
+import {
+  OtpChallenge,
+  OtpChallengeDocument,
+} from '../users/schemas/otp-challenge.schema';
+import { SmsService } from '../sms/sms.service';
+import { JwtPayload } from './strategies/jwt.strategy';
+
+const OTP_TTL_MS = 10 * 60 * 1000;
+const MAX_OTP_ATTEMPTS = 5;
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly jwtService: JwtService,
+    private readonly smsService: SmsService,
+    private readonly config: ConfigService,
+    @InjectModel(OtpChallenge.name)
+    private readonly otpModel: Model<OtpChallengeDocument>,
+  ) {}
+
+  async requestOtp(rawPhone: string): Promise<void> {
+    const phoneE164 = normalizeTurkishMobile(rawPhone);
+    if (!isValidTurkishMobileE164(phoneE164)) {
+      return;
+    }
+    const code = crypto.randomInt(100000, 1000000).toString();
+    const codeHash = await bcrypt.hash(code, 10);
+    await this.otpModel.deleteMany({ phoneE164 }).exec();
+    await this.otpModel.create({
+      phoneE164,
+      codeHash,
+      expiresAt: new Date(Date.now() + OTP_TTL_MS),
+      attempts: 0,
+    });
+    await this.smsService.sendOtp(phoneE164, code);
+  }
+
+  async verifyOtp(
+    rawPhone: string,
+    code: string,
+  ): Promise<{ accessToken: string }> {
+    const phoneE164 = normalizeTurkishMobile(rawPhone);
+    if (!isValidTurkishMobileE164(phoneE164)) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    const challenge = await this.otpModel.findOne({ phoneE164 }).exec();
+    if (!challenge || challenge.expiresAt < new Date()) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    if (challenge.attempts >= MAX_OTP_ATTEMPTS) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    const match = await bcrypt.compare(code, challenge.codeHash);
+    if (!match) {
+      await this.otpModel
+        .updateOne({ _id: challenge._id }, { $inc: { attempts: 1 } })
+        .exec();
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    await this.otpModel.deleteOne({ _id: challenge._id }).exec();
+
+    let user = await this.usersService.findByPhone(phoneE164);
+    if (!user) {
+      user = await this.usersService.findOrCreateCustomer(phoneE164);
+    } else if (user.role === UserRole.CUSTOMER) {
+      // existing customer
+    } else {
+      // staff must pre-exist
+    }
+
+    const accessToken = await this.signUser(
+      user._id.toString(),
+      user.role,
+      user.phoneE164,
+    );
+    return { accessToken };
+  }
+
+  async ownerLogin(
+    rawPhone: string,
+    password: string,
+  ): Promise<{ accessToken: string }> {
+    const phoneE164 = normalizeTurkishMobile(rawPhone);
+    const expected = this.config.getOrThrow<string>('owner.phoneE164');
+    if (phoneE164 !== expected) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    const user = await this.usersService.verifyOwnerPassword(
+      phoneE164,
+      password,
+    );
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    const accessToken = await this.signUser(
+      user._id.toString(),
+      UserRole.ADMIN_OWNER,
+      user.phoneE164,
+    );
+    return { accessToken };
+  }
+
+  private signUser(
+    sub: string,
+    role: UserRole,
+    phoneE164: string,
+  ): Promise<string> {
+    const payload: JwtPayload = { sub, role, phoneE164 };
+    return this.jwtService.signAsync(payload);
+  }
+}
