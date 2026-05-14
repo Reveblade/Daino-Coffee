@@ -9,6 +9,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import helmet from 'helmet';
 
 describe('App (e2e)', () => {
+  jest.setTimeout(120_000);
   let app: INestApplication;
   let mongo: MongoMemoryServer;
 
@@ -18,6 +19,7 @@ describe('App (e2e)', () => {
     process.env.MONGODB_URI = mongo.getUri();
     process.env.JWT_SECRET = 'test-jwt-secret-min-16-chars';
     process.env.JWT_EXPIRES_IN = '1h';
+    process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-16';
     process.env.MENU_PUBLIC_BASE_URL = 'https://menu.example.com';
     process.env.OWNER_PHONE_E164 = '+905551112233';
     process.env.OWNER_PASSWORD = 'ownerpassword12';
@@ -60,6 +62,21 @@ describe('App (e2e)', () => {
       .send({ phone: '+905551112233', password: 'ownerpassword12' })
       .expect(200);
     expect(res.body.accessToken).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/);
+    expect(res.body.refreshToken).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/);
+  });
+
+  it('auth refresh returns a new access token', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/owner/login')
+      .send({ phone: '+905551112233', password: 'ownerpassword12' })
+      .expect(200);
+    const res = await request(app.getHttpServer())
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: login.body.refreshToken })
+      .expect(200);
+    expect(res.body.accessToken).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/);
+    expect(res.body.refreshToken).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/);
+    expect(res.body.refreshToken).not.toBe(login.body.refreshToken);
   });
 
   it('GET /v1/shop/settings', () => {

@@ -1,5 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import type { JwtSignOptions } from '@nestjs/jwt';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
@@ -52,7 +53,7 @@ export class AuthService {
   async verifyOtp(
     rawPhone: string,
     code: string,
-  ): Promise<{ accessToken: string }> {
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     const phoneE164 = normalizeTurkishMobile(rawPhone);
     if (!isValidTurkishMobileE164(phoneE164)) {
       throw new UnauthorizedException('Invalid credentials');
@@ -82,18 +83,17 @@ export class AuthService {
       // staff must pre-exist
     }
 
-    const accessToken = await this.signUser(
+    return this.issueTokenPair(
       user._id.toString(),
       user.role,
       user.phoneE164,
     );
-    return { accessToken };
   }
 
   async ownerLogin(
     rawPhone: string,
     password: string,
-  ): Promise<{ accessToken: string }> {
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     const phoneE164 = normalizeTurkishMobile(rawPhone);
     const expected = this.config.getOrThrow<string>('owner.phoneE164');
     if (phoneE164 !== expected) {
@@ -106,20 +106,60 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
-    const accessToken = await this.signUser(
+    return this.issueTokenPair(
       user._id.toString(),
       UserRole.ADMIN_OWNER,
       user.phoneE164,
     );
-    return { accessToken };
   }
 
-  private signUser(
+  async refresh(
+    refreshToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
+    const refreshSecret = this.config.getOrThrow<string>('jwt.refreshSecret');
+    let decoded: JwtPayload;
+    try {
+      decoded = await this.jwtService.verifyAsync<JwtPayload>(refreshToken, {
+        secret: refreshSecret,
+      });
+    } catch {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    if (decoded.tokenUse !== 'refresh') {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    const user = await this.usersService.findById(decoded.sub);
+    if (!user) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    return this.issueTokenPair(
+      user._id.toString(),
+      user.role,
+      user.phoneE164,
+    );
+  }
+
+  private async issueTokenPair(
     sub: string,
     role: UserRole,
     phoneE164: string,
-  ): Promise<string> {
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     const payload: JwtPayload = { sub, role, phoneE164 };
-    return this.jwtService.signAsync(payload);
+    const accessToken = await this.jwtService.signAsync(payload);
+    const refreshSecret = this.config.getOrThrow<string>('jwt.refreshSecret');
+    const refreshExpiresIn =
+      this.config.get<string>('jwt.refreshExpiresIn') ?? '7d';
+    const refreshToken = await this.jwtService.signAsync(
+      {
+        ...payload,
+        tokenUse: 'refresh' as const,
+        jti: crypto.randomUUID(),
+      },
+      {
+        secret: refreshSecret,
+        expiresIn: refreshExpiresIn as JwtSignOptions['expiresIn'],
+      },
+    );
+    return { accessToken, refreshToken };
   }
 }

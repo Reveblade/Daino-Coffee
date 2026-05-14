@@ -1,4 +1,4 @@
-import { IsString, Length, Matches } from 'class-validator';
+import { IsJWT, IsString, Length, Matches } from 'class-validator';
 
 export class OtpRequestDto {
   @IsString()
@@ -22,4 +22,10 @@ export class OwnerLoginDto {
   @IsString()
   @Length(8, 128)
   password: string;
+}
+
+export class RefreshTokenDto {
+  @IsString()
+  @IsJWT()
+  refreshToken: string;
 }

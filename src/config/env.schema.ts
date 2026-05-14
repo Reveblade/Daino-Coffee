@@ -1,4 +1,8 @@
 import * as Joi from 'joi';
+import {
+  isValidTurkishMobileE164,
+  normalizeTurkishMobile,
+} from '../common/utils/phone.util';
 
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string()
@@ -8,16 +12,25 @@ export const envValidationSchema = Joi.object({
   MONGODB_URI: Joi.string().required(),
   JWT_SECRET: Joi.string().min(16).required(),
   JWT_EXPIRES_IN: Joi.string().default('7d'),
+  JWT_REFRESH_SECRET: Joi.string().min(16).required(),
+  JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
   CORS_ORIGINS: Joi.string().allow('').default('*'),
   MENU_PUBLIC_BASE_URL: Joi.string().uri().required(),
   OWNER_PHONE_E164: Joi.string()
-    .pattern(/^\+905\d{9}$/)
-    .required(),
+    .required()
+    .custom((value, helpers) => {
+      const n = normalizeTurkishMobile(String(value));
+      if (!isValidTurkishMobileE164(n)) {
+        return helpers.error('any.invalid');
+      }
+      return n;
+    }),
   /** If omitted, owner seed is skipped (useful for tests). Production should set this. */
   OWNER_PASSWORD: Joi.string().min(8).optional(),
-  NETGSM_USERCODE: Joi.string().allow('').default(''),
+  NETGSM_USERNAME: Joi.string().allow('').default(''),
   NETGSM_PASSWORD: Joi.string().allow('').default(''),
   NETGSM_MSGHEADER: Joi.string().allow('').default(''),
+  NETGSM_APPNAME: Joi.string().allow('').default(''),
   NETGSM_OTP_DISABLED: Joi.boolean().default(false),
   CLOUDINARY_CLOUD_NAME: Joi.string().allow('').default(''),
   CLOUDINARY_API_KEY: Joi.string().allow('').default(''),

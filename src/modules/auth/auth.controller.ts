@@ -1,7 +1,12 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import { OtpRequestDto, OtpVerifyDto, OwnerLoginDto } from './dto/auth.dto';
+import {
+  OtpRequestDto,
+  OtpVerifyDto,
+  OwnerLoginDto,
+  RefreshTokenDto,
+} from './dto/auth.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -27,5 +32,12 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 600_000 } })
   async ownerLogin(@Body() dto: OwnerLoginDto) {
     return this.authService.ownerLogin(dto.phone, dto.password);
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  async refresh(@Body() dto: RefreshTokenDto) {
+    return this.authService.refresh(dto.refreshToken);
   }
 }

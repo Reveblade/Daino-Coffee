@@ -2,7 +2,7 @@
 
 Repository: [github.com/Daino-Coffee/backend](https://github.com/Daino-Coffee/backend)
 
-NestJS **REST API** (`/v1`) for the Daino Coffee stack: **MongoDB**, **JWT** auth, **Netgsm** SMS OTP for Turkish mobiles (`+90` / `5…`), **Cloudinary** for category/product images and optional table **QR** PNGs, and full **order** workflows (in-place via table QR vs online delivery).
+NestJS **REST API** (`/v1`) for the Daino Coffee stack: **MongoDB**, **JWT** auth, **Netgsm** OTP SMS for Turkish mobiles (`+90` / `5…`), **Cloudinary** for category/product images and optional table **QR** PNGs, and full **order** workflows (in-place via table QR vs online delivery).
 
 ---
 
@@ -45,7 +45,7 @@ Copy [`.env.example`](.env.example) to `.env`. Minimum:
 
 - `MONGODB_URI`, `JWT_SECRET` (≥16 chars), `MENU_PUBLIC_BASE_URL`
 - `OWNER_PHONE_E164`, `OWNER_PASSWORD` (seeds immutable **ADMIN_OWNER** on boot)
-- `NETGSM_*` for production SMS, or `NETGSM_OTP_DISABLED=true` for local dev (OTP logged)
+- `NETGSM_*` for production OTP SMS, or `NETGSM_OTP_DISABLED=true` for local dev (OTP logged)
 - `CLOUDINARY_*` optional (QR/menu uploads degrade gracefully if unset)
 
 | Variable | Purpose |
@@ -54,8 +54,8 @@ Copy [`.env.example`](.env.example) to `.env`. Minimum:
 | `JWT_SECRET` / `JWT_EXPIRES_IN` | Signing & TTL |
 | `CORS_ORIGINS` | Comma-separated browser origins (e.g. Vite dev servers) or `*` |
 | `MENU_PUBLIC_BASE_URL` | Base URL embedded in table QR links |
-| `OWNER_*` | Owner phone (E.164 `+905…`) + password (hashed on bootstrap) |
-| `NETGSM_*` | Netgsm XML SMS (`api.netgsm.com.tr`) |
+| `OWNER_*` | Owner phone (`555…`, `0555…`, `+90555…`, etc. → stored `+905…`) + password (hashed on bootstrap) |
+| `NETGSM_*` | Netgsm OTP SMS (`api.netgsm.com.tr` REST v2) |
 | `CLOUDINARY_*` | Image uploads |
 
 ---
@@ -90,7 +90,7 @@ Compiles TypeScript to `dist/` and runs `node dist/main.js`. Set `NODE_ENV=produ
 - **Customers / staff (non-owner):** `POST /v1/auth/otp/request` → `POST /v1/auth/otp/verify`. First OTP on a new phone creates a **CUSTOMER**. Staff phones must exist (created by admin) before OTP sign-in.
 - **Owner:** `POST /v1/auth/owner/login` — no SMS.
 
-Phones normalize to **E.164** `+905xxxxxxxx`.
+Phones on auth and admin staff endpoints normalize to **E.164** `+905xxxxxxxx` from plain `5…`, `05…`, `90…`, `+90…`, or spaced / dashed input. `OWNER_PHONE_E164` in `.env` accepts the same shapes.
 
 ### Route map (summary)
 
@@ -109,9 +109,9 @@ Phones normalize to **E.164** `+905xxxxxxxx`.
 
 ---
 
-## Netgsm
+## Netgsm (OTP SMS)
 
-OTP SMS uses **XML POST** to `https://api.netgsm.com.tr/sms/send/xml`. Numbers are sent as `90xxxxxxxxx` (no `+`). Success responses are expected to start with `00` (adjust if your account differs).
+OTP SMS is sent with the official [`@netgsm/sms`](https://www.npmjs.com/package/@netgsm/sms) client: **`POST`** `https://api.netgsm.com.tr/sms/rest/v2/otp` (JSON, Basic auth). Set **`NETGSM_USERNAME`** / **`NETGSM_PASSWORD`** (API user in the Netgsm panel), **`NETGSM_MSGHEADER`** (onaylı SMS başlığı), and an active **OTP SMS** package. **`NETGSM_APPNAME`** is optional (matches Netgsm “appname” / SDK tracking). Use **ASCII** text in the template (Netgsm OTP does not support Turkish characters in the OTP product). If Netgsm is **not** configured (`NETGSM_OTP_DISABLED=true` or any of the three creds missing), no SMS is sent; in **`NODE_ENV` ≠ `production`**, the backend prints **`[OTP] +905… code=…`** at **log** level so you can complete OTP locally. In production without Netgsm, the code is **not** printed (configure Netgsm or use another path).
 
 ---
 
