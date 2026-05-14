@@ -96,14 +96,14 @@ async function renderLogin(root) {
     pane.querySelector('#otp-verify').onclick = async () => {
       err.textContent = '';
       try {
-        const { accessToken } = await api('/auth/otp/verify', {
+        const { accessToken, refreshToken } = await api('/auth/otp/verify', {
           method: 'POST',
           body: JSON.stringify({
             phone: pane.querySelector('#otp-phone').value.trim(),
             code: pane.querySelector('#otp-code').value.trim(),
           }),
         });
-        setToken(accessToken);
+        setToken(accessToken, refreshToken);
         screen = 'app';
         view = isCourier() ? 'courier' : 'orders';
         render();
@@ -124,14 +124,14 @@ async function renderLogin(root) {
     pane.querySelector('#ow-go').onclick = async () => {
       err.textContent = '';
       try {
-        const { accessToken } = await api('/auth/owner/login', {
+        const { accessToken, refreshToken } = await api('/auth/owner/login', {
           method: 'POST',
           body: JSON.stringify({
             phone: pane.querySelector('#ow-phone').value.trim(),
             password: pane.querySelector('#ow-pass').value,
           }),
         });
-        setToken(accessToken);
+        setToken(accessToken, refreshToken);
         screen = 'app';
         view = 'orders';
         render();

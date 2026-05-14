@@ -1,4 +1,7 @@
 const TOKEN_KEY = 'daino_authority_token';
+const REFRESH_KEY = 'daino_authority_refresh';
+
+let refreshPromise = null;
 
 export function getApiBase() {
   const raw = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/v1';
@@ -9,9 +12,21 @@ export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
 
-export function setToken(t) {
-  if (t) localStorage.setItem(TOKEN_KEY, t);
-  else localStorage.removeItem(TOKEN_KEY);
+export function getRefreshToken() {
+  return localStorage.getItem(REFRESH_KEY);
+}
+
+/** @param {string | null} accessToken @param {string} [refreshToken] */
+export function setToken(accessToken, refreshToken) {
+  if (accessToken) {
+    localStorage.setItem(TOKEN_KEY, accessToken);
+    if (refreshToken) {
+      localStorage.setItem(REFRESH_KEY, refreshToken);
+    }
+  } else {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(REFRESH_KEY);
+  }
 }
 
 export function decodeJwt(token) {
@@ -23,7 +38,39 @@ export function decodeJwt(token) {
   }
 }
 
-export async function api(path, opts = {}) {
+async function refreshSession() {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    throw new Error('Session expired; please sign in again.');
+  }
+  const url = `${getApiBase()}/auth/refresh`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  });
+  const text = await res.text();
+  let body;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = { message: text };
+  }
+  if (!res.ok) {
+    setToken(null);
+    const err = new Error(
+      Array.isArray(body?.message)
+        ? body.message.join(', ')
+        : body?.message ?? res.statusText,
+    );
+    err.status = res.status;
+    err.body = body;
+    throw err;
+  }
+  setToken(body.accessToken, body.refreshToken);
+}
+
+export async function api(path, opts = {}, isRetry = false) {
   const url = `${getApiBase()}${path.startsWith('/') ? path : `/${path}`}`;
   const headers = {
     'Content-Type': 'application/json',
@@ -39,6 +86,27 @@ export async function api(path, opts = {}) {
   } catch {
     body = { message: text };
   }
+
+  if (res.status === 401 && !isRetry && getRefreshToken()) {
+    const isAuthPath =
+      path.startsWith('/auth/otp/') ||
+      path === '/auth/owner/login' ||
+      path === '/auth/refresh';
+    if (!isAuthPath) {
+      try {
+        if (!refreshPromise) {
+          refreshPromise = refreshSession().finally(() => {
+            refreshPromise = null;
+          });
+        }
+        await refreshPromise;
+        return api(path, opts, true);
+      } catch {
+        /* fall through */
+      }
+    }
+  }
+
   if (!res.ok) {
     const err = new Error(
       Array.isArray(body?.message)
