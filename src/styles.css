@@ -1,0 +1,212 @@
+:root {
+  --bg: #0f1410;
+  --panel: #1a241c;
+  --border: rgba(245, 245, 220, 0.12);
+  --text: #f5f5dc;
+  --muted: rgba(245, 245, 220, 0.6);
+  --accent: #c5cad3;
+  --btn: #e8eaee;
+  --btn-text: #14261a;
+  --danger: #e88;
+  --font: 'DM Sans', system-ui, sans-serif;
+  --display: 'Bebas Neue', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+}
+
+#root {
+  min-height: 100dvh;
+}
+
+.a-layout {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100dvh;
+}
+
+@media (max-width: 900px) {
+  .a-layout {
+    grid-template-columns: 1fr;
+  }
+  .a-side {
+    display: none;
+  }
+  .a-mnav {
+    display: flex;
+  }
+}
+
+.a-side {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 16px;
+}
+
+.a-mnav {
+  display: none;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.a-brand {
+  font-family: var(--display);
+  font-size: 1.75rem;
+  letter-spacing: 0.08em;
+  margin-bottom: 20px;
+}
+
+.a-nav-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.a-nav-btn:hover,
+.a-nav-btn.active {
+  background: rgba(245, 245, 220, 0.08);
+  border-color: var(--border);
+}
+
+.a-main {
+  padding: 20px;
+  max-width: 1100px;
+}
+
+.a-h1 {
+  font-family: var(--display);
+  font-size: 2rem;
+  letter-spacing: 0.06em;
+  margin: 0 0 16px;
+}
+
+.a-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+
+.a-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.a-btn {
+  font: inherit;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  background: var(--btn);
+  color: var(--btn-text);
+}
+
+.a-btn.secondary {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.a-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.a-input,
+.a-select {
+  font: inherit;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  width: 100%;
+  max-width: 320px;
+}
+
+.a-muted {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.a-error {
+  color: var(--danger);
+  font-size: 0.9rem;
+  margin: 8px 0;
+}
+
+.a-login {
+  max-width: 420px;
+  margin: 48px auto;
+  padding: 24px;
+  background: var(--panel);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+}
+
+.a-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.a-tab {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.a-tab.active {
+  background: rgba(245, 245, 220, 0.1);
+}
+
+.a-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.a-table th,
+.a-table td {
+  text-align: left;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.a-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(245, 245, 220, 0.1);
+  font-size: 0.75rem;
+}
