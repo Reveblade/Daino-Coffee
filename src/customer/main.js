@@ -1,4 +1,4 @@
-import { api, formatTry, getToken, setToken } from './api.js';
+import { api, formatTry, getRefreshToken, getToken, setToken } from './api.js';
 
 /** @type {{ categories: any[], products: any[] } | null} */
 let menuCache = null;
@@ -10,6 +10,8 @@ let tableMeta = null;
 let tableSlug = null;
 /** @type {{ productId: string, name: string, unitPriceKurus: number, qty: number }[]} */
 let cart = [];
+/** QR menü: seçili kategori zinciri (köke göre id dizisi); boş = kök kategoriler. */
+let menuBrowseStack = [];
 
 /** Public URL prefix for the ordering app (nginx + Vite dev rewrite). */
 const ORDER_APP_BASE = '/siparis';
@@ -84,6 +86,9 @@ function parseRoute() {
 }
 
 function setRoute(route) {
+  if (route === 'menu') {
+    menuBrowseStack = [];
+  }
   let nextPath;
   if (route === 'menu' && tableSlug) {
     nextPath = `${ORDER_APP_BASE}/masa/${encodeURIComponent(tableSlug)}`;
@@ -270,61 +275,177 @@ function renderMenu(root) {
     return menu.products.filter((p) => String(p.categoryId) === String(catId));
   }
 
-  const sections = [];
-  function walk(cat, depth) {
-    const prods = productsForCat(cat._id);
+  function sortProds(arr) {
+    return [...arr].sort(
+      (a, b) =>
+        (a.sortIndex ?? 0) - (b.sortIndex ?? 0) ||
+        String(a.name).localeCompare(String(b.name), 'tr'),
+    );
+  }
+
+  /** @param {any} cat */
+  function catHasMenuContent(cat) {
+    if (sortProds(productsForCat(cat._id)).length) return true;
     const subs = tree.get(String(cat._id)) ?? [];
-    if (prods.length || subs.length) {
-      sections.push(
-        el('section', { class: 'c-cat' }, [
-          el('h3', {
-            class: 'c-cat-name',
-            text: `${'· '.repeat(depth)}${cat.name}`,
-          }),
-          ...prods.map((p) =>
-            el('div', { class: 'c-card' }, [
-              p.images?.[0]?.url
-                ? el('img', { src: p.images[0].url, alt: '' })
-                : el('div'),
-              el('div', { class: 'c-card-body' }, [
-                el('p', { class: 'c-card-title', text: p.name }),
-                p.description
-                  ? el('p', { class: 'c-card-desc', text: p.description })
-                  : null,
-                el('div', { class: 'c-row' }, [
-                  el('span', { class: 'c-price', text: formatTry(p.priceKurus) }),
-                  el(
-                    'button',
-                    {
-                      class: 'c-btn c-btn--sm',
-                      disabled: blockOrders,
-                      onclick: () => {
-                        if (blockOrders) return;
-                        addToCart(p);
-                        render();
-                      },
-                    },
-                    ['Sepete'],
-                  ),
-                ]),
-              ]),
+    for (const s of subs) {
+      if (catHasMenuContent(s)) return true;
+    }
+    return false;
+  }
+
+  /** @param {any[]} cats @param {(cat: any) => void} onPick */
+  function renderCategoryGrid(cats, onPick) {
+    return el(
+      'div',
+      { class: 'c-menu-cat-grid' },
+      cats.map((cat) =>
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'c-menu-cat-tile',
+            onclick: () => onPick(cat),
+          },
+          [
+            cat.imageUrl
+              ? el('div', { class: 'c-menu-cat-tile-img' }, [
+                  el('img', { src: cat.imageUrl, alt: '' }),
+                ])
+              : el('div', {
+                  class: 'c-menu-cat-tile-img c-menu-cat-tile-img--empty',
+                  'aria-hidden': 'true',
+                }),
+            el('span', { class: 'c-menu-cat-tile-name', text: cat.name }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /** @param {any[]} prods */
+  function renderProductList(prods) {
+    const sorted = sortProds(prods);
+    return el(
+      'div',
+      { class: 'c-menu-prod-list' },
+      sorted.map((p) =>
+        el('article', { class: 'c-menu-prod-rowcard' }, [
+          p.images?.[0]?.url
+            ? el('div', { class: 'c-menu-prod-rowcard-img' }, [
+                el('img', { src: p.images[0].url, alt: '' }),
+              ])
+            : el('div', {
+                class: 'c-menu-prod-rowcard-img c-menu-prod-rowcard-img--empty',
+                'aria-hidden': 'true',
+              }),
+          el('div', { class: 'c-menu-prod-rowcard-body' }, [
+            el('p', { class: 'c-menu-prod-rowcard-title', text: p.name }),
+            p.description
+              ? el('p', { class: 'c-menu-prod-rowcard-desc', text: p.description })
+              : null,
+            el('div', { class: 'c-menu-prod-rowcard-foot' }, [
+              el('span', { class: 'c-price', text: formatTry(p.priceKurus) }),
+              el(
+                'button',
+                {
+                  class: 'c-btn c-btn--sm',
+                  disabled: blockOrders,
+                  onclick: () => {
+                    if (blockOrders) return;
+                    addToCart(p);
+                    render();
+                  },
+                },
+                ['Sepete'],
+              ),
             ]),
-          ),
+          ]),
         ]),
+      ),
+    );
+  }
+
+  const browse = el('div', { class: 'c-menu-browse' });
+
+  if (menuBrowseStack.length === 0) {
+    const eligible = roots.filter((c) => catHasMenuContent(c));
+    browse.append(el('h2', { class: 'c-section-title', text: 'MENÜ' }));
+    if (eligible.length) {
+      browse.append(
+        renderCategoryGrid(eligible, (cat) => {
+          menuBrowseStack = [String(cat._id)];
+          render().catch(console.error);
+        }),
+      );
+    } else {
+      browse.append(
+        el('p', { class: 'c-muted', text: 'Menüde kategori yok.' }),
       );
     }
-    for (const s of subs) walk(s, depth + 1);
-  }
-  for (const r of roots) walk(r, 0);
+  } else {
+    const curId = menuBrowseStack[menuBrowseStack.length - 1];
+    const cur = menu.categories.find((c) => String(c._id) === curId);
+    if (!cur) {
+      menuBrowseStack = [];
+      render().catch(console.error);
+      return;
+    }
+    const subs = tree.get(String(cur._id)) ?? [];
+    const prods = sortProds(productsForCat(cur._id));
 
-  root.append(
-    el('h2', { class: 'c-section-title', text: 'MENÜ' }),
-    ...sections,
-  );
+    browse.append(
+      el('div', { class: 'c-menu-toolbar' }, [
+        el(
+          'button',
+          {
+            type: 'button',
+            class: 'c-btn c-btn--ghost c-btn--sm',
+            onclick: () => {
+              menuBrowseStack.pop();
+              render().catch(console.error);
+            },
+          },
+          ['← Geri'],
+        ),
+      ]),
+      el('h2', { class: 'c-section-title c-menu-browse-title', text: cur.name }),
+      cur.description
+        ? el('p', {
+            class: 'c-muted c-menu-browse-lead',
+            text: cur.description,
+          })
+        : null,
+    );
+
+    if (subs.length) {
+      browse.append(
+        el('h3', { class: 'c-menu-subheading', text: 'Alt kategoriler' }),
+      );
+      browse.append(
+        renderCategoryGrid(subs, (cat) => {
+          menuBrowseStack.push(String(cat._id));
+          render().catch(console.error);
+        }),
+      );
+    }
+
+    if (prods.length) {
+      browse.append(el('h3', { class: 'c-menu-subheading', text: 'Ürünler' }));
+      browse.append(renderProductList(prods));
+    }
+
+    if (!subs.length && !prods.length) {
+      browse.append(
+        el('p', { class: 'c-muted', text: 'Bu kategoride içerik yok.' }),
+      );
+    }
+  }
+
+  root.append(browse);
 }
 
 function renderAccount(root) {
-  const tok = getToken();
+  const tok = getToken() || getRefreshToken();
   if (!tok) {
     root.append(
       el('p', { class: 'c-muted', text: 'Telefon ile giriş yapın.' }),
@@ -443,7 +564,7 @@ function renderCart(root) {
     ),
   );
 
-  const tok = getToken();
+  const tok = getToken() || getRefreshToken();
   const isTable = !!tableSlug;
   const noTable = tableMeta && tableMeta.found === false;
   const storefront = tableMeta?.isStorefront === true;
@@ -492,7 +613,7 @@ function renderCart(root) {
 }
 
 async function submitOrder() {
-  const tok = getToken();
+  const tok = getToken() || getRefreshToken();
   if (!tok) return openAuthModal();
   const items = cart.map((c) => ({
     productId: c.productId,

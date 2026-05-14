@@ -4,6 +4,31 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+function redirectTableShortPath(req, res, next) {
+  const raw = req.url ?? '';
+  const path = raw.split('?')[0] ?? '';
+  const m = /^\/t\/([^/]+)\/?$/.exec(path);
+  if (!m) return next();
+  const qs = raw.includes('?') ? raw.slice(raw.indexOf('?')) : '';
+  res.statusCode = 302;
+  res.setHeader('Location', `/siparis/masa/${encodeURIComponent(m[1])}${qs}`);
+  res.end();
+}
+
+/** Dev / preview: same short QR path as production nginx (`/t/{slug}` → ordering app). */
+function menuTableShortPathRedirect() {
+  return {
+    name: 'menu-table-short-path-redirect',
+    enforce: 'pre',
+    configureServer(server) {
+      server.middlewares.use(redirectTableShortPath);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(redirectTableShortPath);
+    },
+  };
+}
+
 /** Dev / preview: serve the ordering app for clean URLs under /siparis (matches production nginx). */
 function siparisSpaFallback() {
   const siparis = /^\/siparis(?=\/|$)/;
@@ -35,7 +60,7 @@ function siparisSpaFallback() {
 export default defineConfig({
   root: '.',
   publicDir: 'public',
-  plugins: [siparisSpaFallback()],
+  plugins: [menuTableShortPathRedirect(), siparisSpaFallback()],
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
