@@ -11,30 +11,118 @@ let tableSlug = null;
 /** @type {{ productId: string, name: string, unitPriceKurus: number, qty: number }[]} */
 let cart = [];
 
+/** Public URL prefix for the ordering app (nginx + Vite dev rewrite). */
+const ORDER_APP_BASE = '/siparis';
+
+function normalizePathname() {
+  const p = window.location.pathname.replace(/\/+$/, '');
+  return p === '' ? '/' : p;
+}
+
+function menuHomeHref() {
+  if (tableSlug) return `${ORDER_APP_BASE}/masa/${encodeURIComponent(tableSlug)}`;
+  const q = new URLSearchParams(window.location.search);
+  const t = q.get('t');
+  if (t) return `${ORDER_APP_BASE}?${new URLSearchParams({ t }).toString()}`;
+  return ORDER_APP_BASE;
+}
+
 function parseRoute() {
-  const h = window.location.hash.replace(/^#\/?/, '');
-  const parts = h.split('/').filter(Boolean);
   tableSlug = null;
-  if (parts[0] === 'masa' && parts[1]) {
-    tableSlug = parts[1];
+  const path = normalizePathname();
+  const base = ORDER_APP_BASE.replace(/\/+$/, '');
+
+  if (path === base) {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('t')) tableSlug = q.get('t');
     return 'menu';
   }
+
+  const masaPrefix = `${base}/masa/`;
+  if (path.startsWith(masaPrefix)) {
+    const rest = path.slice(masaPrefix.length).split('/').filter(Boolean)[0];
+    if (rest) tableSlug = decodeURIComponent(rest);
+    return 'menu';
+  }
+
+  if (path === `${base}/hesap`) return 'account';
+  if (path === `${base}/sepet`) return 'cart';
+
+  // Legacy: built customer.html entry + hash routes
+  if (path.endsWith('/customer.html')) {
+    const h = window.location.hash.replace(/^#\/?/, '');
+    const parts = h.split('/').filter(Boolean);
+    if (parts[0] === 'masa' && parts[1]) {
+      tableSlug = parts[1];
+      return 'menu';
+    }
+    if (parts[0] === 'hesap') return 'account';
+    if (parts[0] === 'sepet') return 'cart';
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('t')) {
+      tableSlug = q.get('t');
+      return 'menu';
+    }
+    return 'menu';
+  }
+
+  const h = window.location.hash.replace(/^#\/?/, '');
+  const hp = h.split('/').filter(Boolean);
+  if (hp[0] === 'masa' && hp[1]) {
+    tableSlug = hp[1];
+    return 'menu';
+  }
+  if (hp[0] === 'hesap') return 'account';
+  if (hp[0] === 'sepet') return 'cart';
+
   const q = new URLSearchParams(window.location.search);
   if (q.get('t')) {
     tableSlug = q.get('t');
     return 'menu';
   }
-  if (parts[0] === 'hesap') return 'account';
-  if (parts[0] === 'sepet') return 'cart';
   return 'menu';
 }
 
-function setHash(route) {
+function setRoute(route) {
+  let nextPath;
   if (route === 'menu' && tableSlug) {
-    window.location.hash = `/masa/${tableSlug}`;
-  } else if (route === 'account') window.location.hash = '/hesap';
-  else if (route === 'cart') window.location.hash = '/sepet';
-  else window.location.hash = '/';
+    nextPath = `${ORDER_APP_BASE}/masa/${encodeURIComponent(tableSlug)}`;
+  } else if (route === 'account') {
+    nextPath = `${ORDER_APP_BASE}/hesap`;
+  } else if (route === 'cart') {
+    nextPath = `${ORDER_APP_BASE}/sepet`;
+  } else {
+    const q = new URLSearchParams(window.location.search);
+    const t = q.get('t');
+    nextPath = t ? `${ORDER_APP_BASE}?${new URLSearchParams({ t }).toString()}` : ORDER_APP_BASE;
+  }
+  const cur = window.location.pathname + window.location.search;
+  if (nextPath !== cur) history.pushState({}, '', nextPath);
+  render().catch(console.error);
+}
+
+/** One-time upgrade from customer.html#/… to /siparis/… in the address bar. */
+function migrateLegacyCustomerUrl() {
+  const path = normalizePathname();
+  if (!path.endsWith('/customer.html')) return;
+
+  const h = window.location.hash.replace(/^#\/?/, '');
+  const parts = h.split('/').filter(Boolean);
+  const q = new URLSearchParams(window.location.search);
+  const t = q.get('t');
+
+  let target = ORDER_APP_BASE;
+  if (parts[0] === 'masa' && parts[1]) {
+    target = `${ORDER_APP_BASE}/masa/${encodeURIComponent(parts[1])}`;
+  } else if (parts[0] === 'hesap') {
+    target = `${ORDER_APP_BASE}/hesap`;
+  } else if (parts[0] === 'sepet') {
+    target = `${ORDER_APP_BASE}/sepet`;
+  } else if (t) {
+    target = `${ORDER_APP_BASE}?${new URLSearchParams({ t }).toString()}`;
+  }
+
+  history.replaceState({}, '', target);
 }
 
 /**
@@ -300,7 +388,7 @@ function renderAccount(root) {
                   city: city.value,
                 }),
               });
-              setHash('account');
+              setRoute('account');
               render();
             },
           },
@@ -420,7 +508,7 @@ async function submitOrder() {
       const me = await api('/users/me');
       if (!me.addresses?.length) {
         alert('Önce hesabınızdan adres ekleyin.');
-        setHash('account');
+        setRoute('account');
         render();
         return;
       }
@@ -460,9 +548,13 @@ function openAuthModal() {
       el('h2', { text: 'Giriş' }),
       el('p', {
         class: 'c-muted',
-        text: '+90 ile başlayan Türk cep telefonu (05xx).',
+        text: 'Türk cep: 5xx…, 05xx…, 90… veya +90… (boşluk/tire olabilir).',
       }),
-      el('input', { class: 'c-input', placeholder: '05xx veya +905xx', id: 'ph' }),
+      el('input', {
+        class: 'c-input',
+        placeholder: 'örn. 5551112233 veya 0555…',
+        id: 'ph',
+      }),
       err,
       el(
         'button',
@@ -510,11 +602,14 @@ function openAuthModal() {
               modal.querySelector('#cd')
             ).value.trim();
             try {
-              const { accessToken } = await api('/auth/otp/verify', {
-                method: 'POST',
-                body: JSON.stringify({ phone, code }),
-              });
-              setToken(accessToken);
+              const { accessToken, refreshToken } = await api(
+                '/auth/otp/verify',
+                {
+                  method: 'POST',
+                  body: JSON.stringify({ phone, code }),
+                },
+              );
+              setToken(accessToken, refreshToken);
               close();
               render();
             } catch (e) {
@@ -536,19 +631,30 @@ function openAuthModal() {
 function renderTopbar() {
   parseRoute();
   return el('header', { class: 'c-topbar' }, [
-    el('a', { href: '#/', class: 'c-brand', text: 'DAINO' }),
+    el('a', {
+      href: menuHomeHref(),
+      class: 'c-brand',
+      text: 'DAINO',
+      onclick: (e) => {
+        if (e.button !== 0) return;
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        parseRoute();
+        setRoute('menu');
+      },
+    }),
     el('div', { class: 'c-topbar-actions' }, [
       tableSlug
         ? el('span', { class: 'c-badge', text: 'Masa' })
         : el('span', { class: 'c-badge', text: 'Web' }),
       el(
         'button',
-        { class: 'c-btn c-btn--ghost c-btn--sm', onclick: () => setHash('account') },
+        { class: 'c-btn c-btn--ghost c-btn--sm', onclick: () => setRoute('account') },
         ['Hesap'],
       ),
       el(
         'button',
-        { class: 'c-btn c-btn--sm', onclick: () => setHash('cart') },
+        { class: 'c-btn c-btn--sm', onclick: () => setRoute('cart') },
         [`Sepet (${cartCount()})`],
       ),
     ]),
@@ -562,7 +668,7 @@ function renderCartBar() {
     el('span', { class: 'c-cart-total', text: formatTry(cartTotal()) }),
     el(
       'button',
-      { class: 'c-btn c-btn--sm', onclick: () => setHash('cart') },
+      { class: 'c-btn c-btn--sm', onclick: () => setRoute('cart') },
       ['Sepete git'],
     ),
   ]);
@@ -592,8 +698,15 @@ async function render() {
   if (bar) app.append(bar);
 }
 
-window.addEventListener('hashchange', () => {
+window.addEventListener('popstate', () => {
   render().catch(console.error);
 });
 
+window.addEventListener('hashchange', () => {
+  if (normalizePathname().endsWith('/customer.html')) {
+    render().catch(console.error);
+  }
+});
+
+migrateLegacyCustomerUrl();
 render().catch(console.error);
