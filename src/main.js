@@ -1,12 +1,16 @@
-import {
-  api,
-  decodeJwt,
-  getRefreshToken,
-  getToken,
-  setToken,
-  uploadAdminImage,
-} from './api.js';
+import { api, decodeJwt, getRefreshToken, getToken, setToken } from './api.js';
 import { connectOrdersStaffRealtime } from './orders-realtime.js';
+import geyikBrandUrl from './assets/geyik.svg?url';
+
+document.documentElement.style.setProperty(
+  '--a-brand-logo-mask',
+  `url("${geyikBrandUrl}")`,
+);
+import QRCode from 'qrcode';
+import { idStr } from './menu/helpers.js';
+import { renderMenuList } from './menu/pages/menu-list.js';
+import { renderProductFormPage } from './menu/pages/product-form-page.js';
+import { renderCategoryFormPage } from './menu/pages/category-form-page.js';
 
 /** @type {'login' | 'app'} */
 let screen = 'login';
@@ -18,16 +22,42 @@ let stopOrdersWs = null;
 /** True while staff orders WebSocket is connected (disables fast HTTP polling). */
 let ordersWsLive = false;
 
+/** Geçmiş liste / detay (sayfa yeniden çizilince korunur). */
+let historyUi = {
+  /** @type {string | null} */
+  detailOrderId: null,
+  page: 0,
+  /** @type {string} */
+  q: '',
+  pageSize: 20,
+};
+
+function defaultMenuListUi() {
+  return {
+    catPage: 0,
+    catPageSize: 20,
+    catQ: '',
+    prodPage: 0,
+    prodPageSize: 20,
+    prodQ: '',
+  };
+}
+
+/** Menü: liste veya ayrı form sayfaları. */
+let menuUi = {
+  /** @type {'list' | 'category-new' | 'category-edit' | 'product-new' | 'product-edit'} */
+  sub: 'list',
+  /** @type {string | null} */
+  id: null,
+  list: defaultMenuListUi(),
+};
+
 function esc(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-function idStr(x) {
-  return String(x?._id ?? x ?? '');
 }
 
 function channelLabelTr(ch) {
@@ -151,13 +181,25 @@ function latestInPlaceAdditionDisplay(o) {
   const last = adds[adds.length - 1];
   const meta = last?.metadata?.addedItems;
   const line = Array.isArray(meta)
-    ? meta.map((a) => `${a.quantity}×${a.name}`).join(', ')
+    ? meta
+        .map((a) => {
+          const ox = a.optionsLine ? ` (${a.optionsLine})` : '';
+          return `${a.quantity}×${a.name}${ox}`;
+        })
+        .join(', ')
     : '';
   const full = adds
     .slice(-5)
     .map((h) => {
       const m = h?.metadata?.addedItems;
-      return Array.isArray(m) ? m.map((a) => `${a.quantity}×${a.name}`).join(', ') : '';
+      return Array.isArray(m)
+        ? m
+            .map((a) => {
+              const ox = a.optionsLine ? ` (${a.optionsLine})` : '';
+              return `${a.quantity}×${a.name}${ox}`;
+            })
+            .join(', ')
+        : '';
     })
     .filter(Boolean)
     .join(' → ');
@@ -165,12 +207,16 @@ function latestInPlaceAdditionDisplay(o) {
   return { text: short, title: full || line };
 }
 
-/** @param {string} url @param {string | number} tableNumber */
-async function downloadQrImage(url, tableNumber) {
+/** Menü URL'sine göre QR PNG üretir ve indirmeyi başlatır. */
+async function downloadTableQrPng(menuUrl, tableNumber) {
   const name = `masa-${tableNumber}-qr.png`;
   try {
-    const res = await fetch(url, { mode: 'cors' });
-    if (!res.ok) throw new Error(String(res.status));
+    const dataUrl = await QRCode.toDataURL(menuUrl, {
+      width: 512,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+    });
+    const res = await fetch(dataUrl);
     const blob = await res.blob();
     const href = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -181,8 +227,8 @@ async function downloadQrImage(url, tableNumber) {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(href), 2000);
-  } catch {
-    window.open(url, '_blank', 'noopener,noreferrer');
+  } catch (e) {
+    alert(e instanceof Error ? e.message : 'QR oluşturulamadı');
   }
 }
 
@@ -249,36 +295,6 @@ function showQrRegenerateTwoStepDialog() {
   });
 }
 
-function catPath(cat, cats) {
-  const parts = [];
-  let cur = cat;
-  const seen = new Set();
-  while (cur && !seen.has(idStr(cur))) {
-    seen.add(idStr(cur));
-    parts.unshift(cur.name);
-    const pid = cur.parentId;
-    cur = pid ? cats.find((c) => idStr(c) === idStr(pid)) : null;
-  }
-  return parts.join(' › ');
-}
-
-function parseTryToKurus(s) {
-  const n = parseFloat(String(s).trim().replace(',', '.'));
-  if (Number.isNaN(n) || n < 0) return null;
-  return Math.round(n * 100);
-}
-
-/** @returns {Promise<File | null>} */
-function pickImageFile() {
-  return new Promise((resolve) => {
-    const inp = document.createElement('input');
-    inp.type = 'file';
-    inp.accept = 'image/*';
-    inp.onchange = () => resolve(inp.files?.[0] ?? null);
-    inp.click();
-  });
-}
-
 function role() {
   const t = getToken();
   if (!t) return null;
@@ -303,6 +319,240 @@ function isCourier() {
   return role() === 'COURIER';
 }
 
+function isCashierOnly() {
+  return role() === 'CASHIER';
+}
+
+/** @param {object} o */
+function isTerminalOrder(o) {
+  const st = o?.status;
+  return st === 'PAID' || st === 'CANCELLED';
+}
+
+/** @param {object} o */
+function orderTimeMs(o, field) {
+  const v = o?.[field];
+  if (!v) return 0;
+  const t = new Date(v).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** @param {object} o */
+function staffActionsList(o) {
+  return o.channel === 'IN_PLACE'
+    ? inPlaceActions(o.status)
+    : onlineStaffActions(o.status);
+}
+
+/** @param {object} o */
+function canCancelOrder(o) {
+  return staffActionsList(o).some((a) => a.act === 'CANCEL');
+}
+
+/**
+ * Tek ana ileri adım (durum adı buton etiketinde).
+ * @param {object} o
+ * @returns {{ kind: 'transition', act: string, targetLabel: string } | { kind: 'assign', targetLabel: string } | null}
+ */
+function primaryFlowStep(o) {
+  if (isTerminalOrder(o)) return null;
+  const ch = o.channel;
+  const st = o.status;
+  if (ch === 'IN_PLACE') {
+    if (st === 'PLACED')
+      return {
+        kind: 'transition',
+        act: 'START',
+        targetLabel: inPlaceStatusTr('IN_PROGRESS'),
+      };
+    if (st === 'IN_PROGRESS')
+      return {
+        kind: 'transition',
+        act: 'READY',
+        targetLabel: inPlaceStatusTr('READY'),
+      };
+    if (st === 'READY')
+      return {
+        kind: 'transition',
+        act: 'AWAIT_PAYMENT',
+        targetLabel: inPlaceStatusTr('AWAITING_PAYMENT'),
+      };
+    if (st === 'AWAITING_PAYMENT')
+      return {
+        kind: 'transition',
+        act: 'MARK_PAID',
+        targetLabel: inPlaceStatusTr('PAID'),
+      };
+    return null;
+  }
+  if (st === 'PLACED')
+    return {
+      kind: 'transition',
+      act: 'CONFIRM',
+      targetLabel: onlineStatusTr('CONFIRMED'),
+    };
+  if (st === 'CONFIRMED')
+    return {
+      kind: 'transition',
+      act: 'START_PREP',
+      targetLabel: onlineStatusTr('IN_PROGRESS'),
+    };
+  if (st === 'IN_PROGRESS')
+    return {
+      kind: 'transition',
+      act: 'READY_HANDOFF',
+      targetLabel: onlineStatusTr('READY_FOR_HANDOFF'),
+    };
+  if (st === 'READY_FOR_HANDOFF')
+    return { kind: 'assign', targetLabel: onlineStatusTr('ASSIGNED') };
+  if (st === 'AWAITING_CASHIER_PAYMENT')
+    return {
+      kind: 'transition',
+      act: 'MARK_PAID',
+      targetLabel: onlineStatusTr('PAID'),
+    };
+  return null;
+}
+
+/** @param {object} o @returns {string} */
+function orderFlowActionsInnerHtml(o) {
+  const id = esc(idStr(o));
+  const chEsc = esc(o.channel);
+  const bits = [];
+  if (canCancelOrder(o)) {
+    bits.push(
+      `<button type="button" class="a-btn secondary a-act" data-id="${id}" data-ch="${chEsc}" data-act="CANCEL">İptal</button>`,
+    );
+  }
+  const step = primaryFlowStep(o);
+  if (step?.kind === 'transition') {
+    bits.push(
+      `<button type="button" class="a-btn a-act" data-id="${id}" data-ch="${chEsc}" data-act="${esc(step.act)}">→ ${esc(step.targetLabel)}</button>`,
+    );
+  } else if (step?.kind === 'assign') {
+    bits.push(
+      `<select class="a-select a-courier-sel" data-id="${id}" aria-label="Kurye"><option value="">Kurye seç…</option></select>`,
+    );
+    bits.push(
+      `<button type="button" class="a-btn a-assign" data-id="${id}">→ ${esc(step.targetLabel)}</button>`,
+    );
+  }
+  return bits.join('');
+}
+
+async function fetchOrdersStaff() {
+  const orders = await api('/orders?limit=80');
+  return Array.isArray(orders) ? orders : [];
+}
+
+/** @param {HTMLElement} container */
+async function rerenderStaffOrderContainers(container) {
+  if (view === 'history') {
+    if (historyUi.detailOrderId) {
+      await renderOrderHistoryDetail(container, historyUi.detailOrderId);
+    } else {
+      await renderOrderHistory(container);
+    }
+  } else await renderOrders(container);
+}
+
+/** @param {number | string | undefined} kurus */
+function formatTryFromKurus(kurus) {
+  const n = Number(kurus) || 0;
+  return `${(n / 100).toLocaleString('tr-TR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} ₺`;
+}
+
+/** @param {string | undefined} iso */
+function formatDateTimeTr(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('tr-TR');
+  } catch {
+    return '—';
+  }
+}
+
+/** @param {string | undefined} e164 */
+function formatPhoneTrDisplay(e164) {
+  if (!e164 || typeof e164 !== 'string') return '';
+  const s = e164.replace(/\s/g, '');
+  if (s.startsWith('+90') && s.length >= 13) {
+    const rest = s.slice(3);
+    return `0${rest.slice(0, 3)} ${rest.slice(3, 6)} ${rest.slice(6, 8)} ${rest.slice(8, 10)}`;
+  }
+  return s;
+}
+
+/** @param {{ firstName?: string, lastName?: string, phoneE164?: string }} c */
+function courierSelectDisplayText(c) {
+  const fn = c.firstName != null ? String(c.firstName).trim() : '';
+  const ln = c.lastName != null ? String(c.lastName).trim() : '';
+  const full = [fn, ln].filter(Boolean).join(' ').trim();
+  return full || (c.phoneE164 ? formatPhoneTrDisplay(c.phoneE164) || c.phoneE164 : '') || 'Kurye';
+}
+
+/** @param {object} o @returns {string} */
+function liveOrderCardHtml(o) {
+  const id = esc(idStr(o));
+  const shortId = id.length >= 8 ? id.slice(-8) : id;
+  const ch = o.channel;
+  const chLabel = esc(channelLabelTr(ch));
+  const stRaw = esc(o.status);
+  const stLabel =
+    ch === 'IN_PLACE'
+      ? esc(inPlaceStatusTr(o.status))
+      : esc(onlineStatusTr(o.status));
+  const masa = ch === 'IN_PLACE' ? tableNumberCell(o) : '—';
+  const itemsSummary = esc(orderItemsSummary(o));
+  const addDisp = latestInPlaceAdditionDisplay(o);
+  const sonEk =
+    ch === 'IN_PLACE' && addDisp.text
+      ? `<p class="a-muted a-order-card__son" title="${esc(addDisp.title)}">${esc(addDisp.text)}</p>`
+      : '';
+  const actions = orderFlowActionsInnerHtml(o);
+  return `<article class="a-order-card">
+    <div class="a-order-card__head">
+      <code class="a-order-card__id">${shortId}</code>
+      <span class="a-badge">${chLabel}</span>
+    </div>
+    <p class="a-order-card__meta"><strong>${masa}</strong></p>
+    <p class="a-order-card__items">${itemsSummary}</p>
+    ${sonEk}
+    <p class="a-order-card__status"><span title="${stRaw}">${stLabel}</span></p>
+    <div class="a-order-card__actions">${actions ? `<div class="a-order-card__flow">${actions}</div>` : '<span class="a-muted">İşlem yok</span>'}</div>
+  </article>`;
+}
+
+/** @param {object} o @returns {string} */
+function historyOrderRowHtml(o) {
+  const rawId = idStr(o);
+  const id = esc(rawId);
+  const shortId = id.length >= 8 ? id.slice(-8) : id;
+  const ch = o.channel;
+  const chLabel = esc(channelLabelTr(ch));
+  const stRaw = esc(o.status);
+  const stLabel =
+    ch === 'IN_PLACE'
+      ? esc(inPlaceStatusTr(o.status))
+      : esc(onlineStatusTr(o.status));
+  const masa = ch === 'IN_PLACE' ? tableNumberCell(o) : '—';
+  const itemsSummary = esc(orderItemsSummary(o));
+  const when = o.updatedAt
+    ? esc(
+        new Date(o.updatedAt).toLocaleString('tr-TR', {
+          day: '2-digit',
+          month: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      )
+    : '—';
+  return `<tr data-detail="${rawId}"><td><code>${shortId}</code></td><td><span class="a-badge">${chLabel}</span></td><td>${masa}</td><td>${itemsSummary}</td><td><span title="${stRaw}">${stLabel}</span></td><td class="a-muted">${when}</td><td><button type="button" class="a-btn secondary a-history-detail-btn" data-detail="${rawId}">Detay</button></td></tr>`;
+}
+
 function clearPoll() {
   if (pollTimer) {
     clearInterval(pollTimer);
@@ -319,6 +569,8 @@ function stopOrdersRealtime() {
 }
 
 function applyView(nextView) {
+  historyUi.detailOrderId = null;
+  if (nextView !== 'menu') menuUi = { sub: 'list', id: null, list: defaultMenuListUi() };
   view = nextView;
   const root = document.getElementById('root');
   if (root && screen === 'app') {
@@ -334,14 +586,15 @@ function startPoll() {
   if (screen !== 'app') return;
   pollTimer = setInterval(() => {
     if (ordersWsLive) return;
-    if (view === 'orders' || view === 'courier') renderMain();
+    if (view === 'orders' || view === 'history' || view === 'courier')
+      renderMain();
   }, 8000);
 }
 
 async function renderLogin(root) {
   root.innerHTML = `
     <div class="a-login">
-      <div class="a-brand" style="margin-bottom:8px">DAINO</div>
+      <div class="a-brand" style="margin-bottom:8px"><span class="a-brand-logo" aria-hidden="true"></span>DAINO</div>
       <p class="a-muted">Operasyon paneli — yetkili telefon veya sahip girişi.</p>
       <div class="a-tabs" id="login-tabs">
         <button type="button" class="a-tab active" data-tab="otp">Personel (SMS)</button>
@@ -446,65 +699,34 @@ function navButton(label, key) {
 async function renderOrders(container) {
   let orders = [];
   try {
-    orders = await api('/orders?limit=80');
+    orders = await fetchOrdersStaff();
   } catch (e) {
     container.innerHTML = `<p class="a-error">${esc(e.message)}</p>`;
     return;
   }
-  if (!Array.isArray(orders)) orders = [];
 
-  const rows = orders
-    .map((o) => {
-      const id = esc(o._id);
-      const ch = o.channel;
-      const chLabel = esc(channelLabelTr(ch));
-      const stRaw = esc(o.status);
-      const stLabel =
-        ch === 'IN_PLACE'
-          ? esc(inPlaceStatusTr(o.status))
-          : esc(onlineStatusTr(o.status));
-      const masa = ch === 'IN_PLACE' ? tableNumberCell(o) : '—';
-      const itemsSummary = esc(orderItemsSummary(o));
-      const addDisp = latestInPlaceAdditionDisplay(o);
-      const sonEk =
-        ch === 'IN_PLACE' && addDisp.text
-          ? `<span class="a-muted" title="${esc(addDisp.title)}">${esc(addDisp.text)}</span>`
-          : '—';
-      let actions = '';
-      if (o.channel === 'IN_PLACE') {
-        actions = inPlaceActions(o.status)
-          .map(
-            ({ act, label }) =>
-              `<button type="button" class="a-btn secondary a-act" data-id="${id}" data-ch="IN_PLACE" data-act="${esc(act)}">${esc(label)}</button>`,
-          )
-          .join(' ');
-      } else {
-        actions = onlineStaffActions(o.status)
-          .map(
-            ({ act, label }) =>
-              `<button type="button" class="a-btn secondary a-act" data-id="${id}" data-ch="ONLINE" data-act="${esc(act)}">${esc(label)}</button>`,
-          )
-          .join(' ');
-        if (o.status === 'READY_FOR_HANDOFF') {
-          actions += `
-          <span class="a-muted">Kurye:</span>
-          <select class="a-select a-courier-sel" data-id="${id}" style="max-width:160px;display:inline-block;width:auto"></select>
-          <button type="button" class="a-btn a-assign" data-id="${id}">Kurye ata</button>`;
-        }
-      }
-      return `<tr><td><code>${id.slice(-8)}</code></td><td><span class="a-badge">${chLabel}</span></td><td>${masa}</td><td>${itemsSummary}</td><td>${sonEk}</td><td><span title="${stRaw}">${stLabel}</span></td><td style="text-align:right;white-space:nowrap">${actions}</td></tr>`;
-    })
-    .join('');
+  const live = orders.filter((o) => !isTerminalOrder(o));
+  live.sort((a, b) => orderTimeMs(a, 'createdAt') - orderTimeMs(b, 'createdAt'));
+
+  const cardsHtml =
+    live.length > 0
+      ? `<div class="a-order-cards">${live.map((o) => liveOrderCardHtml(o)).join('')}</div>`
+      : `<div class="a-card a-muted">Aktif sipariş yok.</div>`;
 
   container.innerHTML = `
     <h1 class="a-h1">Siparişler</h1>
-    <p class="a-muted">Liste WebSocket ile anlık güncellenir; bağlantı yoksa birkaç saniyede bir REST ile yenilenir.</p>
-    <div style="overflow:auto">
-      <table class="a-table">
-        <thead><tr><th>ID</th><th>Kanal</th><th>Masa</th><th>Ürünler</th><th>Son ek</th><th>Durum</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="7" class="a-muted">Kayıt yok</td></tr>'}</tbody>
-      </table>
-    </div>`;
+    <p class="a-muted">Canlı siparişler WebSocket ile güncellenir; bağlantı yoksa birkaç saniyede bir REST ile yenilenir.</p>
+    <p class="a-muted" style="margin-top:-8px"><a class="a-inline-link" href="#" id="a-goto-history">Geçmiş siparişler</a></p>
+    <h2 class="a-h2">Canlı siparişler</h2>
+    ${cardsHtml}`;
+
+  const histLink = container.querySelector('#a-goto-history');
+  if (histLink) {
+    histLink.onclick = (ev) => {
+      ev.preventDefault();
+      applyView('history');
+    };
+  }
 
   let couriers = [];
   try {
@@ -516,7 +738,8 @@ async function renderOrders(container) {
     couriers.forEach((c) => {
       const o = document.createElement('option');
       o.value = c._id;
-      o.textContent = `${c.phoneE164} (${c.role})`;
+      o.textContent = courierSelectDisplayText(c);
+      if (c.phoneE164) o.title = String(c.phoneE164);
       sel.appendChild(o);
     });
   });
@@ -535,7 +758,7 @@ async function renderOrders(container) {
           method: 'POST',
           body: JSON.stringify({ action: act }),
         });
-        await renderOrders(container);
+        await rerenderStaffOrderContainers(container);
       } catch (e) {
         alert(e.message);
       }
@@ -547,17 +770,272 @@ async function renderOrders(container) {
       const id = btn.dataset.id;
       const sel = container.querySelector(`.a-courier-sel[data-id="${id}"]`);
       const courierUserId = sel?.value;
-      if (!courierUserId) return;
+      if (!courierUserId) {
+        alert('Kurye seçin.');
+        return;
+      }
       try {
         await api(`/orders/${id}/assign-courier`, {
           method: 'POST',
           body: JSON.stringify({ courierUserId }),
         });
-        await renderOrders(container);
+        await rerenderStaffOrderContainers(container);
       } catch (e) {
         alert(e.message);
       }
     };
+  });
+}
+
+async function renderOrderHistory(container) {
+  const params = new URLSearchParams({
+    page: String(historyUi.page),
+    pageSize: String(historyUi.pageSize),
+  });
+  const qTrim = historyUi.q.trim();
+  if (qTrim) params.set('q', qTrim);
+
+  /** @type {{ items?: object[], total?: number, page?: number, pageSize?: number }} */
+  let body;
+  try {
+    body = await api(`/orders/history?${params.toString()}`);
+  } catch (e) {
+    container.innerHTML = `<p class="a-error">${esc(e.message)}</p>`;
+    return;
+  }
+
+  const items = Array.isArray(body.items) ? body.items : [];
+  const total = Number(body.total) || 0;
+  const page =
+    typeof body.page === 'number' && Number.isFinite(body.page)
+      ? body.page
+      : historyUi.page;
+  const pageSize =
+    typeof body.pageSize === 'number' && Number.isFinite(body.pageSize)
+      ? body.pageSize
+      : historyUi.pageSize;
+  historyUi.page = page;
+  historyUi.pageSize = pageSize;
+
+  const histNote = isCashierOnly()
+    ? '<p class="a-muted">Yalnızca son 24 saatte tamamlanan veya iptal edilen siparişler listelenir.</p>'
+    : '';
+
+  const histRows = items.map((o) => historyOrderRowHtml(o)).join('');
+  const emptyColspan = 7;
+  const fromN = total === 0 ? 0 : page * pageSize + 1;
+  const toN = Math.min(total, page * pageSize + items.length);
+  const hasPrev = page > 0;
+  const hasNext = page * pageSize + items.length < total;
+
+  container.innerHTML = `
+    <h1 class="a-h1">Geçmiş siparişler</h1>
+    <p class="a-muted"><a class="a-inline-link" href="#" id="a-goto-live">Canlı siparişlere dön</a></p>
+    ${histNote}
+    <form class="a-history-toolbar" id="hist-search-form" role="search">
+      <input class="a-input a-history-q" type="search" id="hist-q" name="q" placeholder="Sipariş no, ürün veya adres ara…" value="${esc(historyUi.q)}" autocomplete="off" />
+      <button type="submit" class="a-btn" id="hist-submit">Ara</button>
+    </form>
+    <p class="a-muted" id="hist-range">${esc(`${fromN}–${toN} / ${total} kayıt`)}</p>
+    <div style="overflow:auto;margin-top:8px">
+      <table class="a-table">
+        <thead><tr><th>ID</th><th>Kanal</th><th>Masa</th><th>Ürünler</th><th>Durum</th><th>Güncellendi</th><th></th></tr></thead>
+        <tbody id="hist-tbody">${histRows || `<tr><td colspan="${emptyColspan}" class="a-muted">Kayıt yok</td></tr>`}</tbody>
+      </table>
+    </div>
+    <div class="a-history-pager">
+      <button type="button" class="a-btn secondary" id="hist-prev" ${hasPrev ? '' : 'disabled'}>Önceki</button>
+      <span class="a-muted">Sayfa ${esc(String(page + 1))}</span>
+      <button type="button" class="a-btn secondary" id="hist-next" ${hasNext ? '' : 'disabled'}>Sonraki</button>
+    </div>`;
+
+  container.querySelector('#a-goto-live')?.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    applyView('orders');
+  });
+
+  container.querySelector('#hist-search-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const input = /** @type {HTMLInputElement | null} */ (
+      container.querySelector('#hist-q')
+    );
+    historyUi.q = input?.value?.trim() ?? '';
+    historyUi.page = 0;
+    renderMain().catch(console.error);
+  });
+
+  container.querySelector('#hist-prev')?.addEventListener('click', () => {
+    if (historyUi.page <= 0) return;
+    historyUi.page -= 1;
+    renderMain().catch(console.error);
+  });
+
+  container.querySelector('#hist-next')?.addEventListener('click', () => {
+    if (!hasNext) return;
+    historyUi.page += 1;
+    renderMain().catch(console.error);
+  });
+
+  container.querySelectorAll('.a-history-detail-btn').forEach((btn) => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const id = /** @type {HTMLButtonElement} */ (btn).dataset.detail;
+      if (!id) return;
+      historyUi.detailOrderId = id;
+      renderMain().catch(console.error);
+    });
+  });
+}
+
+/** @param {object} it */
+function orderItemOptionSelectionsText(it) {
+  if (!it?.optionSelections?.length) return '';
+  return it.optionSelections
+    .map((g) => {
+      const labs = (g.selectedChoices || [])
+        .map((c) => {
+          const base = c.label ? String(c.label) : '';
+          if (!base) return '';
+          const ex = Number(c.extraPriceKurus) || 0;
+          if (ex <= 0) return base;
+          return `${base} (+${formatTryFromKurus(ex)})`;
+        })
+        .filter(Boolean)
+        .join(', ');
+      if (!labs) return '';
+      return `${g.groupLabel || g.groupId}: ${labs}`;
+    })
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** @param {object} it */
+function orderDetailItemRow(it) {
+  const qty = Number(it.quantity) || 0;
+  const unit = Number(it.unitPriceKurus) || 0;
+  const line = qty * unit;
+  const opt = orderItemOptionSelectionsText(it);
+  const optHtml = opt
+    ? `<div class="a-muted" style="font-size:0.82rem;margin-top:4px">${esc(opt)}</div>`
+    : '';
+  return `<tr><td>${esc(it.name)}${optHtml}</td><td>${esc(String(qty))}</td><td>${esc(formatTryFromKurus(unit))}</td><td>${esc(formatTryFromKurus(line))}</td></tr>`;
+}
+
+/** @param {object} h */
+function orderHistoryDetailEntryRow(h) {
+  const at = formatDateTimeTr(h.at);
+  const from = h.from != null ? esc(String(h.from)) : '—';
+  const to = h.to != null ? esc(String(h.to)) : '—';
+  const note = h.note ? esc(String(h.note)) : '—';
+  return `<tr><td class="a-muted">${esc(at)}</td><td>${from} → ${to}</td><td>${note}</td></tr>`;
+}
+
+/** @param {HTMLElement} container @param {string} orderId */
+async function renderOrderHistoryDetail(container, orderId) {
+  /** @type {object | null} */
+  let o = null;
+  try {
+    o = await api(`/orders/${encodeURIComponent(orderId)}`);
+  } catch (e) {
+    container.innerHTML = `
+      <p class="a-error">${esc(e.message)}</p>
+      <p><button type="button" class="a-btn secondary" id="hist-det-fallback">Listeye dön</button></p>`;
+    container.querySelector('#hist-det-fallback')?.addEventListener('click', () => {
+      historyUi.detailOrderId = null;
+      renderMain().catch(console.error);
+    });
+    return;
+  }
+
+  const rawId = idStr(o);
+  const ch = o.channel;
+  const chLabel = esc(channelLabelTr(ch));
+  const stLabel =
+    ch === 'IN_PLACE'
+      ? esc(inPlaceStatusTr(o.status))
+      : esc(onlineStatusTr(o.status));
+  const masa = ch === 'IN_PLACE' ? tableNumberCell(o) : '—';
+  const rec = o.deliveryRecipient;
+  let recipientBlock = '';
+  if (rec && typeof rec === 'object') {
+    const fn = rec.firstName != null && String(rec.firstName).trim() ? esc(String(rec.firstName).trim()) : '—';
+    const ln = rec.lastName != null && String(rec.lastName).trim() ? esc(String(rec.lastName).trim()) : '—';
+    const phRaw = rec.phoneE164 != null && String(rec.phoneE164).trim() ? String(rec.phoneE164).trim() : '';
+    const ph = phRaw ? esc(formatPhoneTrDisplay(phRaw)) : '—';
+    if (fn !== '—' || ln !== '—' || ph !== '—') {
+      recipientBlock = `<div class="a-card a-order-detail-block"><h2 class="a-h2" style="margin-top:0">Teslim alıcı</h2>
+      <p><strong>Ad:</strong> ${fn}</p>
+      <p><strong>Soyad:</strong> ${ln}</p>
+      <p><strong>Telefon:</strong> ${ph}</p></div>`;
+    }
+  }
+  const addr = o.deliveryAddress;
+  let addrBlock = '';
+  if (addr && typeof addr === 'object') {
+    const rows = [];
+    if (addr.label) rows.push(`<p><strong>Adres adı:</strong> ${esc(String(addr.label))}</p>`);
+    if (addr.line1) rows.push(`<p><strong>Satır 1:</strong> ${esc(String(addr.line1))}</p>`);
+    if (addr.line2) rows.push(`<p><strong>Satır 2:</strong> ${esc(String(addr.line2))}</p>`);
+    if (addr.district) rows.push(`<p><strong>İlçe:</strong> ${esc(String(addr.district))}</p>`);
+    if (addr.city) rows.push(`<p><strong>İl:</strong> ${esc(String(addr.city))}</p>`);
+    if (addr.country) rows.push(`<p><strong>Ülke:</strong> ${esc(String(addr.country))}</p>`);
+    if (rows.length) {
+      addrBlock = `<div class="a-card a-order-detail-block"><h2 class="a-h2" style="margin-top:0">Teslimat adresi</h2>${rows.join('')}</div>`;
+    }
+  }
+  const coll = o.collectionMethod
+    ? esc(o.collectionMethod === 'POS' ? 'POS' : 'Nakit')
+    : '—';
+
+  const itemsRows = Array.isArray(o.items)
+    ? o.items.map((it) => orderDetailItemRow(it)).join('')
+    : '';
+
+  const histSorted = Array.isArray(o.history)
+    ? [...o.history].sort(
+        (a, b) => orderTimeMs(a, 'at') - orderTimeMs(b, 'at'),
+      )
+    : [];
+  const histRows = histSorted.map((h) => orderHistoryDetailEntryRow(h)).join('');
+
+  container.innerHTML = `
+    <h1 class="a-h1">Sipariş detayı</h1>
+    <p class="a-muted"><button type="button" class="a-btn secondary" id="hist-det-back">← Geçmiş listesine dön</button></p>
+    <div class="a-card a-order-detail-block">
+      <div class="a-row">
+        <div>
+          <p class="a-muted" style="margin:0">Sipariş</p>
+          <p style="margin:4px 0 0"><code>${esc(rawId)}</code></p>
+        </div>
+        <span class="a-badge">${chLabel}</span>
+      </div>
+      <p><strong>Durum:</strong> ${stLabel}</p>
+      <p><strong>Masa / kanal:</strong> ${masa}</p>
+      <p><strong>Oluşturulma:</strong> ${esc(formatDateTimeTr(o.createdAt))}</p>
+      <p><strong>Son güncelleme:</strong> ${esc(formatDateTimeTr(o.updatedAt))}</p>
+      <p><strong>Ödeme tipi (teslimat):</strong> ${coll}</p>
+      <p><strong>Toplam:</strong> ${esc(formatTryFromKurus(o.totalKurus))}</p>
+    </div>
+    ${recipientBlock}
+    ${addrBlock}
+    <h2 class="a-h2">Ürünler</h2>
+    <div style="overflow:auto">
+      <table class="a-table">
+        <thead><tr><th>Ürün</th><th>Adet</th><th>Birim</th><th>Satır</th></tr></thead>
+        <tbody>${itemsRows || '<tr><td colspan="4" class="a-muted">—</td></tr>'}</tbody>
+      </table>
+    </div>
+    <h2 class="a-h2">Durum geçmişi</h2>
+    <div style="overflow:auto">
+      <table class="a-table">
+        <thead><tr><th>Zaman</th><th>Geçiş</th><th>Not</th></tr></thead>
+        <tbody>${histRows || '<tr><td colspan="3" class="a-muted">—</td></tr>'}</tbody>
+      </table>
+    </div>`;
+
+  container.querySelector('#hist-det-back')?.addEventListener('click', () => {
+    historyUi.detailOrderId = null;
+    renderMain().catch(console.error);
   });
 }
 
@@ -678,7 +1156,11 @@ async function renderStaff(container) {
   container.innerHTML = `
     <h1 class="a-h1">Personel</h1>
     <div class="a-card">
-      <label class="a-muted">Telefon</label>
+      <label class="a-muted">İsim</label>
+      <input class="a-input" id="st-fn" placeholder="Ad" />
+      <label class="a-muted" style="display:block;margin-top:8px">Soyisim</label>
+      <input class="a-input" id="st-ln" placeholder="Soyad" />
+      <label class="a-muted" style="display:block;margin-top:8px">Telefon</label>
       <input class="a-input" id="st-phone" placeholder="+905…" />
       <label class="a-muted" style="display:block;margin-top:8px">Rol</label>
       <select class="a-select" id="st-role">
@@ -689,27 +1171,91 @@ async function renderStaff(container) {
       <button type="button" class="a-btn" style="margin-top:10px" id="st-add">Ekle</button>
     </div>
     <table class="a-table" style="margin-top:16px">
-      <thead><tr><th>Telefon</th><th>Rol</th><th></th></tr></thead>
-      <tbody>
+      <thead><tr><th>Ad Soyad</th><th>Telefon</th><th>Rol</th><th></th></tr></thead>
+      <tbody id="st-tbody">
         ${list
-          .map(
-            (u) => `<tr>
+          .map((u) => {
+            const id = String(u._id ?? u.id ?? '');
+            const fn = u.firstName ?? '';
+            const ln = u.lastName ?? '';
+            const display =
+              [fn, ln].filter(Boolean).join(' ') || '—';
+            return `<tr data-staff-id="${esc(id)}">
+          <td class="st-name-cell">
+            <span class="st-name-view">${esc(display)}</span>
+            <span class="st-name-edit" style="display:none">
+              <input class="a-input st-edit-fn" value="${esc(fn)}" placeholder="Ad" />
+              <input class="a-input st-edit-ln" value="${esc(ln)}" placeholder="Soyad" style="margin-top:6px" />
+            </span>
+          </td>
           <td>${esc(u.phoneE164)}</td>
           <td>${esc(u.role)}</td>
-          <td><button type="button" class="a-btn secondary a-del" data-id="${esc(String(u._id))}">Sil</button></td>
-        </tr>`,
-          )
+          <td class="st-actions-cell">
+            <button type="button" class="a-btn secondary st-edit">Düzenle</button>
+            <button type="button" class="a-btn st-save" style="display:none">Kaydet</button>
+            <button type="button" class="a-btn secondary st-cancel" style="display:none">İptal</button>
+            <button type="button" class="a-btn secondary a-del" data-id="${esc(id)}">Sil</button>
+          </td>
+        </tr>`;
+          })
           .join('')}
       </tbody>
     </table>`;
 
+  const tbody = container.querySelector('#st-tbody');
+  tbody.addEventListener('click', async (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLElement)) return;
+    const tr = t.closest('tr[data-staff-id]');
+    if (!tr) return;
+    const staffId = tr.dataset.staffId;
+
+    if (t.classList.contains('st-edit')) {
+      tr.querySelector('.st-name-view').style.display = 'none';
+      tr.querySelector('.st-name-edit').style.display = 'block';
+      tr.querySelector('.st-edit').style.display = 'none';
+      tr.querySelector('.st-save').style.display = 'inline-block';
+      tr.querySelector('.st-cancel').style.display = 'inline-block';
+      return;
+    }
+    if (t.classList.contains('st-cancel')) {
+      await renderStaff(container);
+      return;
+    }
+    if (t.classList.contains('st-save')) {
+      const firstName = tr.querySelector('.st-edit-fn').value.trim();
+      const lastName = tr.querySelector('.st-edit-ln').value.trim();
+      if (firstName.length < 2 || lastName.length < 2) {
+        alert('İsim ve soyisim en az 2 karakter olmalı.');
+        return;
+      }
+      try {
+        await api(`/admin/staff/${staffId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ firstName, lastName }),
+        });
+        await renderStaff(container);
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+  });
+
   container.querySelector('#st-add').onclick = async () => {
+    const firstName = container.querySelector('#st-fn').value.trim();
+    const lastName = container.querySelector('#st-ln').value.trim();
+    if (firstName.length < 2 || lastName.length < 2) {
+      alert('İsim ve soyisim en az 2 karakter olmalı.');
+      return;
+    }
     try {
       await api('/admin/staff', {
         method: 'POST',
         body: JSON.stringify({
           phone: container.querySelector('#st-phone').value.trim(),
           role: container.querySelector('#st-role').value,
+          firstName,
+          lastName,
         }),
       });
       await renderStaff(container);
@@ -755,14 +1301,7 @@ async function renderTables(container) {
           <td>${esc(t.number)}</td>
           <td><code>${esc(t.publicSlug?.slice(0, 12))}…</code></td>
           <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis"><a href="${esc(t.menuUrl)}" target="_blank" rel="noopener">${esc(t.menuUrl)}</a></td>
-          <td class="a-qr-cell">${
-            t.qrImageUrl
-              ? `<div class="a-qr-wrap">
-            <img class="a-qr-thumb" src="${esc(t.qrImageUrl)}" alt="" width="72" height="72" />
-            <button type="button" class="a-btn secondary a-dlqr" data-url="${esc(t.qrImageUrl)}" data-num="${esc(String(t.number))}">Görseli indir</button>
-          </div>`
-              : '<span class="a-muted">—</span>'
-          }</td>
+          <td class="a-qr-cell"><button type="button" class="a-btn secondary a-dlqr" data-menu-url="${esc(t.menuUrl)}" data-num="${esc(String(t.number))}">Görseli indir</button></td>
           <td>
             ${t.isSystem ? '<span class="a-muted">sistem</span>' : `<button type="button" class="a-btn secondary a-regqr" data-id="${esc(String(t._id))}">QR yenile</button>
             <button type="button" class="a-btn secondary a-delt" data-id="${esc(String(t._id))}">Sil</button>`}
@@ -788,9 +1327,9 @@ async function renderTables(container) {
   };
   container.querySelectorAll('.a-dlqr').forEach((b) => {
     b.onclick = () => {
-      const { url, num } = b.dataset;
-      if (!url) return;
-      void downloadQrImage(url, num ?? '');
+      const menuUrl = b.dataset.menuUrl;
+      if (!menuUrl) return;
+      void downloadTableQrPng(menuUrl, b.dataset.num ?? '');
     };
   });
   container.querySelectorAll('.a-regqr').forEach((b) => {
@@ -821,273 +1360,92 @@ async function renderTables(container) {
 }
 
 async function renderMenuAdmin(container) {
-  let cats = [];
-  let prods = [];
-  try {
-    cats = await api('/admin/menu/categories');
-    prods = await api('/admin/menu/products');
-  } catch (e) {
-    container.innerHTML = `<p class="a-error">${esc(e.message)}</p>`;
+  const onBack = () => {
+    menuUi = { ...menuUi, sub: 'list', id: null };
+    renderMain().catch(console.error);
+  };
+  const reload = () => renderMain().catch(console.error);
+
+  if (menuUi.sub === 'list') {
+    await renderMenuList(container, {
+      esc,
+      listUi: menuUi.list,
+      refresh: () => renderMain().catch(console.error),
+      onNewCategory: () => {
+        menuUi = { ...menuUi, sub: 'category-new', id: null };
+        renderMain().catch(console.error);
+      },
+      onNewProduct: () => {
+        menuUi = { ...menuUi, sub: 'product-new', id: null };
+        renderMain().catch(console.error);
+      },
+      onEditCategory: (id) => {
+        menuUi = { ...menuUi, sub: 'category-edit', id };
+        renderMain().catch(console.error);
+      },
+      onEditProduct: (id) => {
+        menuUi = { ...menuUi, sub: 'product-edit', id };
+        renderMain().catch(console.error);
+      },
+    });
     return;
   }
-  if (!Array.isArray(cats)) cats = [];
-  if (!Array.isArray(prods)) prods = [];
 
-  const catsSorted = [...cats].sort((a, b) =>
-    catPath(a, cats).localeCompare(catPath(b, cats), 'tr'),
-  );
-  const catOpts = catsSorted
-    .map(
-      (c) =>
-        `<option value="${esc(idStr(c))}">${esc(catPath(c, cats))}</option>`,
-    )
-    .join('');
-  const parentOpts =
-    `<option value="">— Üst kategori yok —</option>` +
-    catsSorted
-      .map(
-        (c) =>
-          `<option value="${esc(idStr(c))}">${esc(catPath(c, cats))}</option>`,
-      )
-      .join('');
-
-  const catRows = catsSorted
-    .map((c) => {
-      const id = esc(idStr(c));
-      const thumb = c.imageUrl
-        ? `<img src="${esc(c.imageUrl)}" alt="" class="a-menu-thumb" />`
-        : '<span class="a-muted">—</span>';
-      return `<tr>
-        <td>${esc(catPath(c, cats))}</td>
-        <td style="text-align:center;width:64px">${thumb}</td>
-        <td>${c.sortIndex ?? 0}</td>
-        <td style="white-space:nowrap">
-          <button type="button" class="a-btn secondary a-menu-cat-img" data-id="${id}">Kategori görseli</button>
-          <button type="button" class="a-btn secondary a-menu-del-cat" data-id="${id}">Sil</button>
-        </td>
-      </tr>`;
-    })
-    .join('');
-
-  const prodRows = [...prods]
-    .sort((a, b) => String(a.name).localeCompare(String(b.name), 'tr'))
-    .map((p) => {
-      const cat = cats.find((c) => idStr(c) === idStr(p.categoryId));
-      const cname = cat ? catPath(cat, cats) : '—';
-      const pid = esc(idStr(p));
-      const avail = p.isAvailable !== false;
-      const pthumb = p.images?.[0]?.url
-        ? `<img src="${esc(p.images[0].url)}" alt="" class="a-menu-thumb" />`
-        : '<span class="a-muted">—</span>';
-      return `<tr>
-        <td style="text-align:center;width:64px">${pthumb}</td>
-        <td>${esc(p.name)}</td>
-        <td class="a-muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(cname)}</td>
-        <td>${(Number(p.priceKurus) / 100).toFixed(2)} ₺</td>
-        <td>${avail ? 'satışta' : 'kapalı'}</td>
-        <td style="white-space:nowrap">
-          <button type="button" class="a-btn secondary a-menu-prod-img" data-id="${pid}">Ürün görseli</button>
-          <button type="button" class="a-btn secondary a-menu-toggle-p" data-id="${pid}">${avail ? 'Kapat' : 'Aç'}</button>
-          <button type="button" class="a-btn secondary a-menu-del-p" data-id="${pid}">Sil</button>
-        </td>
-      </tr>`;
-    })
-    .join('');
-
-  container.innerHTML = `
-    <h1 class="a-h1">Menü</h1>
-    <p class="a-muted">Kategori ve ürün ekleyin; alt kategori için üst kategori seçin. Fiyatı Türk Lirası olarak girin (ör. 45,50).</p>
-
-    <div class="a-card" style="margin-bottom:16px">
-      <strong>Yeni kategori</strong>
-      <label class="a-muted" style="display:block;margin-top:8px">Ad</label>
-      <input class="a-input" id="menu-cat-name" placeholder="Örn. İçecekler" />
-      <label class="a-muted" style="display:block;margin-top:8px">Açıklama (opsiyonel)</label>
-      <input class="a-input" id="menu-cat-desc" placeholder="" />
-      <label class="a-muted" style="display:block;margin-top:8px">Üst kategori (alt kategori için)</label>
-      <select class="a-select" id="menu-cat-parent">${parentOpts}</select>
-      <label class="a-muted" style="display:block;margin-top:8px">Sıra</label>
-      <input class="a-input" id="menu-cat-sort" type="number" value="0" style="max-width:120px" />
-      <button type="button" class="a-btn" style="margin-top:10px" id="menu-cat-add">Kategori ekle</button>
-    </div>
-
-    <div class="a-card" style="margin-bottom:16px">
-      <strong>Yeni ürün</strong>
-      <label class="a-muted" style="display:block;margin-top:8px">Kategori</label>
-      <select class="a-select" id="menu-prod-cat">${catOpts}</select>
-      <label class="a-muted" style="display:block;margin-top:8px">Ad</label>
-      <input class="a-input" id="menu-prod-name" placeholder="Ürün adı" />
-      <label class="a-muted" style="display:block;margin-top:8px">Açıklama (opsiyonel)</label>
-      <input class="a-input" id="menu-prod-desc" placeholder="" />
-      <label class="a-muted" style="display:block;margin-top:8px">Fiyat (₺)</label>
-      <input class="a-input" id="menu-prod-price" placeholder="12,50" style="max-width:160px" />
-      <label class="a-muted" style="display:block;margin-top:8px">Sıra</label>
-      <input class="a-input" id="menu-prod-sort" type="number" value="0" style="max-width:120px" />
-      <button type="button" class="a-btn" style="margin-top:10px" id="menu-prod-add">Ürün ekle</button>
-    </div>
-
-    <h2 class="a-h1" style="font-size:1.15rem">Kategoriler (${cats.length})</h2>
-    <div style="overflow:auto;margin-bottom:24px">
-      <table class="a-table">
-        <thead><tr><th>Kategori</th><th>Görsel</th><th>Sıra</th><th></th></tr></thead>
-        <tbody>${catRows || '<tr><td colspan="4" class="a-muted">Kayıt yok</td></tr>'}</tbody>
-      </table>
-    </div>
-
-    <h2 class="a-h1" style="font-size:1.15rem">Ürünler (${prods.length})</h2>
-    <div style="overflow:auto">
-      <table class="a-table">
-        <thead><tr><th>Görsel</th><th>Ad</th><th>Kategori</th><th>Fiyat</th><th>Durum</th><th></th></tr></thead>
-        <tbody>${prodRows || '<tr><td colspan="6" class="a-muted">Kayıt yok</td></tr>'}</tbody>
-      </table>
-    </div>`;
-
-  container.querySelector('#menu-cat-add').onclick = async () => {
-    const name = container.querySelector('#menu-cat-name').value.trim();
-    if (!name) {
-      alert('Kategori adı gerekli.');
-      return;
-    }
-    const description =
-      container.querySelector('#menu-cat-desc').value.trim() || undefined;
-    const parentVal = container.querySelector('#menu-cat-parent').value.trim();
-    const sortIndex = Number(container.querySelector('#menu-cat-sort').value);
-    try {
-      await api('/admin/menu/categories', {
-        method: 'POST',
-        body: JSON.stringify({
-          name,
-          description,
-          parentId: parentVal || undefined,
-          sortIndex: Number.isFinite(sortIndex) ? sortIndex : 0,
-        }),
-      });
-      await renderMenuAdmin(container);
-    } catch (e) {
-      alert(e.message);
-    }
-  };
-
-  container.querySelector('#menu-prod-add').onclick = async () => {
-    const categoryId = container.querySelector('#menu-prod-cat').value;
-    const name = container.querySelector('#menu-prod-name').value.trim();
-    const description =
-      container.querySelector('#menu-prod-desc').value.trim() || undefined;
-    const kurus = parseTryToKurus(container.querySelector('#menu-prod-price').value);
-    const sortIndex = Number(container.querySelector('#menu-prod-sort').value);
-    if (!categoryId) {
-      alert('Kategori seçin.');
-      return;
-    }
-    if (!name) {
-      alert('Ürün adı gerekli.');
-      return;
-    }
-    if (kurus === null) {
-      alert('Geçerli bir fiyat girin.');
-      return;
-    }
-    try {
-      await api('/admin/menu/products', {
-        method: 'POST',
-        body: JSON.stringify({
-          categoryId,
-          name,
-          description,
-          priceKurus: kurus,
-          sortIndex: Number.isFinite(sortIndex) ? sortIndex : 0,
-        }),
-      });
-      await renderMenuAdmin(container);
-    } catch (e) {
-      alert(e.message);
-    }
-  };
-
-  container.querySelectorAll('.a-menu-cat-img').forEach((b) => {
-    b.onclick = async () => {
-      const file = await pickImageFile();
-      if (!file) return;
-      try {
-        const up = await uploadAdminImage(file);
-        await api(`/admin/menu/categories/${b.dataset.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ imageUrl: up.url }),
-        });
-        await renderMenuAdmin(container);
-      } catch (e) {
-        alert(e.message);
-      }
-    };
-  });
-
-  container.querySelectorAll('.a-menu-prod-img').forEach((b) => {
-    b.onclick = async () => {
-      const file = await pickImageFile();
-      if (!file) return;
-      const row = prods.find((p) => idStr(p) === b.dataset.id);
-      try {
-        const up = await uploadAdminImage(file);
-        const prev = Array.isArray(row?.images) ? [...row.images] : [];
-        await api(`/admin/menu/products/${b.dataset.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            images: [...prev, { url: up.url, publicId: up.publicId }],
-          }),
-        });
-        await renderMenuAdmin(container);
-      } catch (e) {
-        alert(e.message);
-      }
-    };
-  });
-
-  container.querySelectorAll('.a-menu-del-cat').forEach((b) => {
-    b.onclick = async () => {
-      if (!confirm('Bu kategori silinsin mi? (Alt kategori veya ürün varsa silinmez.)')) return;
-      try {
-        await api(`/admin/menu/categories/${b.dataset.id}`, { method: 'DELETE' });
-        await renderMenuAdmin(container);
-      } catch (e) {
-        alert(e.message);
-      }
-    };
-  });
-
-  container.querySelectorAll('.a-menu-del-p').forEach((b) => {
-    b.onclick = async () => {
-      if (!confirm('Bu ürün silinsin mi?')) return;
-      try {
-        await api(`/admin/menu/products/${b.dataset.id}`, { method: 'DELETE' });
-        await renderMenuAdmin(container);
-      } catch (e) {
-        alert(e.message);
-      }
-    };
-  });
-
-  container.querySelectorAll('.a-menu-toggle-p').forEach((b) => {
-    b.onclick = async () => {
-      const row = prods.find((p) => idStr(p) === b.dataset.id);
-      const next = !(row && row.isAvailable !== false);
-      try {
-        await api(`/admin/menu/products/${b.dataset.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ isAvailable: next }),
-        });
-        await renderMenuAdmin(container);
-      } catch (e) {
-        alert(e.message);
-      }
-    };
-  });
+  if (menuUi.sub === 'category-new') {
+    await renderCategoryFormPage(container, {
+      esc,
+      mode: 'new',
+      categoryId: null,
+      onBack,
+      reload,
+    });
+    return;
+  }
+  if (menuUi.sub === 'category-edit') {
+    await renderCategoryFormPage(container, {
+      esc,
+      mode: 'edit',
+      categoryId: menuUi.id,
+      onBack,
+      reload,
+    });
+    return;
+  }
+  if (menuUi.sub === 'product-new') {
+    await renderProductFormPage(container, {
+      esc,
+      mode: 'new',
+      productId: null,
+      onBack,
+      reload,
+    });
+    return;
+  }
+  if (menuUi.sub === 'product-edit') {
+    await renderProductFormPage(container, {
+      esc,
+      mode: 'edit',
+      productId: menuUi.id,
+      onBack,
+      reload,
+    });
+  }
 }
 
 async function renderMain() {
   const main = document.getElementById('a-main');
   if (!main) return;
   if (view === 'orders' && !isCourier()) await renderOrders(main);
-  else if (view === 'courier' && isCourier()) await renderCourier(main);
+  else if (view === 'history') {
+    if (!isCashierPlus()) {
+      view = 'orders';
+      await renderMain();
+    } else if (historyUi.detailOrderId) {
+      await renderOrderHistoryDetail(main, historyUi.detailOrderId);
+    } else {
+      await renderOrderHistory(main);
+    }
+  } else if (view === 'courier' && isCourier()) await renderCourier(main);
   else if (view === 'courier' && !isCourier()) {
     view = 'orders';
     await renderMain();
@@ -1114,13 +1472,14 @@ function renderApp(root) {
   const sideNav = isCourier()
     ? `${navButton('Görevler', 'courier')}`
     : `${navButton('Siparişler', 'orders')}
+       ${navButton('Geçmiş', 'history')}
        ${isCashierPlus() ? navButton('Mağaza', 'shop') : ''}
        ${isAdmin() ? navButton('Personel', 'staff') + navButton('Masalar', 'tables') + navButton('Menü', 'menu') : ''}`;
 
   root.innerHTML = `
     <div class="a-layout">
       <aside class="a-side">
-        <div class="a-brand">DAINO</div>
+        <div class="a-brand"><span class="a-brand-logo" aria-hidden="true"></span>DAINO</div>
         <p class="a-muted" style="margin-bottom:16px">${esc(r)}</p>
         ${sideNav}
         <button type="button" class="a-nav-btn" id="a-logout" style="margin-top:24px">Çıkış</button>
@@ -1148,7 +1507,10 @@ function renderApp(root) {
     .then(() => {
       stopOrdersWs = connectOrdersStaffRealtime({
         onOrdersPush: () => {
-          if (screen === 'app' && (view === 'orders' || view === 'courier')) {
+          if (
+            screen === 'app' &&
+            (view === 'orders' || view === 'history' || view === 'courier')
+          ) {
             renderMain().catch(console.error);
           }
         },

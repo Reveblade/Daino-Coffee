@@ -8,6 +8,9 @@
     "preview": "vite preview --port 5174",
     "lint": "eslint src"
   },
+  "dependencies": {
+    "qrcode": "^1.5.4"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.0",
     "eslint": "^9.39.0",
