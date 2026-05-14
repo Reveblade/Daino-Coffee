@@ -41,7 +41,7 @@ export class UploadsService {
     return new Promise((resolve, reject) => {
       const uploadStream = cloudinary.uploader.upload_stream(
         {
-          folder: 'daino',
+          folder: 'dainocoffee',
           public_id: filename.replace(/\.[^/.]+$/, ''),
           resource_type: 'image',
         },
@@ -64,7 +64,9 @@ export class UploadsService {
     if (!this.configured) {
       return null;
     }
-    const res = await cloudinary.uploader.upload(dataUri, { folder: 'daino' });
+    const res = await cloudinary.uploader.upload(dataUri, {
+      folder: 'dainocoffee',
+    });
     return { secure_url: res.secure_url, public_id: res.public_id };
   }
 

@@ -6,9 +6,24 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Category, CategoryDocument } from './schemas/category.schema';
-import { Product, ProductDocument } from './schemas/product.schema';
+import {
+  Product,
+  ProductDocument,
+  ProductOptionGroup,
+} from './schemas/product.schema';
 import { UploadsService } from '../uploads/uploads.service';
 import { StoreRealtimeGateway } from '../store-realtime/store-realtime.gateway';
+
+function escapeRegex(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export type MenuAdminPage<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
 
 @Injectable()
 export class MenuService {
@@ -20,6 +35,54 @@ export class MenuService {
     private readonly uploads: UploadsService,
     private readonly storeRealtime: StoreRealtimeGateway,
   ) {}
+
+  private sanitizeOptionGroups(
+    groups?: ProductOptionGroup[] | null,
+  ): ProductOptionGroup[] {
+    if (!groups?.length) {
+      return []
+    }
+    const gids = new Set<string>()
+    const out: ProductOptionGroup[] = []
+    for (const g of groups) {
+      const gid = String(g?.id ?? '').trim()
+      const glabel = String(g?.label ?? '').trim()
+      if (!gid || !glabel) {
+        throw new BadRequestException('Seçenek grubu id ve başlık zorunludur')
+      }
+      if (gids.has(gid)) {
+        throw new BadRequestException(`Yinelenen seçenek grubu id: ${gid}`)
+      }
+      gids.add(gid)
+      const kind = g.kind === 'SELECTABLE' || g.kind === 'SINGLE' ? g.kind : null
+      if (!kind) {
+        throw new BadRequestException(`Geçersiz seçenek türü: ${String(g?.kind)}`)
+      }
+      const choicesIn = Array.isArray(g.choices) ? g.choices : []
+      if (!choicesIn.length) {
+        throw new BadRequestException(`"${glabel}" grubunda en az bir seçenek olmalı`)
+      }
+      const cids = new Set<string>()
+      const choices: { id: string; label: string; extraPriceKurus: number }[] = []
+      for (const c of choicesIn) {
+        const cid = String(c?.id ?? '').trim()
+        const clabel = String(c?.label ?? '').trim()
+        if (!cid || !clabel) {
+          throw new BadRequestException('Seçenek id ve etiketi zorunludur')
+        }
+        if (cids.has(cid)) {
+          throw new BadRequestException(`Yinelenen seçenek id (${glabel}): ${cid}`)
+        }
+        cids.add(cid)
+        const rawExtra = Number((c as { extraPriceKurus?: unknown })?.extraPriceKurus)
+        const extraPriceKurus =
+          Number.isFinite(rawExtra) && rawExtra >= 0 ? Math.round(rawExtra) : 0
+        choices.push({ id: cid, label: clabel, extraPriceKurus })
+      }
+      out.push({ id: gid, label: glabel, kind, choices })
+    }
+    return out
+  }
 
   async publicMenuTree() {
     const categories = await this.categoryModel
@@ -35,8 +98,40 @@ export class MenuService {
     return { categories, products };
   }
 
-  async listCategoriesAdmin() {
-    return this.categoryModel.find().sort({ sortIndex: 1 }).exec();
+  async listCategoriesAdmin(
+    opts?: { q?: string; page?: number; pageSize?: number },
+  ): Promise<CategoryDocument[] | MenuAdminPage<CategoryDocument>> {
+    const filter =
+      opts?.q?.trim()
+        ? {
+            $or: [
+              { name: new RegExp(escapeRegex(opts.q.trim()), 'i') },
+              { description: new RegExp(escapeRegex(opts.q.trim()), 'i') },
+            ],
+          }
+        : {};
+    const sort = { sortIndex: 1 as const, name: 1 as const };
+    const usePaging =
+      opts != null &&
+      Number.isFinite(opts.page) &&
+      Number.isFinite(opts.pageSize) &&
+      opts.page! >= 0 &&
+      opts.pageSize! >= 1;
+    if (!usePaging) {
+      return this.categoryModel.find(filter).sort(sort).exec();
+    }
+    const page = Math.floor(Math.max(0, opts!.page!));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(opts!.pageSize!)));
+    const [total, items] = await Promise.all([
+      this.categoryModel.countDocuments(filter).exec(),
+      this.categoryModel
+        .find(filter)
+        .sort(sort)
+        .skip(page * pageSize)
+        .limit(pageSize)
+        .exec(),
+    ]);
+    return { items, total, page, pageSize };
   }
 
   async createCategory(body: {
@@ -131,22 +226,68 @@ export class MenuService {
     this.storeRealtime.notifyMenuChanged();
   }
 
-  async listProductsAdmin() {
-    return this.productModel.find().sort({ sortIndex: 1 }).exec();
+  async listProductsAdmin(
+    opts?: { q?: string; page?: number; pageSize?: number },
+  ): Promise<ProductDocument[] | MenuAdminPage<ProductDocument>> {
+    const filter: Record<string, unknown> = {};
+    const q = opts?.q?.trim();
+    if (q) {
+      const rx = new RegExp(escapeRegex(q), 'i');
+      const catHits = await this.categoryModel
+        .find({
+          $or: [{ name: rx }, { description: rx }],
+        })
+        .select('_id')
+        .lean()
+        .exec();
+      const catIds = catHits.map((c) => c._id);
+      const orBranches: Record<string, unknown>[] = [
+        { name: rx },
+        { description: rx },
+      ];
+      if (catIds.length) {
+        orBranches.push({ categoryId: { $in: catIds } });
+      }
+      filter.$or = orBranches;
+    }
+    const sort = { sortIndex: 1 as const, name: 1 as const };
+    const usePaging =
+      opts != null &&
+      Number.isFinite(opts.page) &&
+      Number.isFinite(opts.pageSize) &&
+      opts.page! >= 0 &&
+      opts.pageSize! >= 1;
+    if (!usePaging) {
+      return this.productModel.find(filter).sort(sort).exec();
+    }
+    const page = Math.floor(Math.max(0, opts!.page!));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(opts!.pageSize!)));
+    const [total, items] = await Promise.all([
+      this.productModel.countDocuments(filter).exec(),
+      this.productModel
+        .find(filter)
+        .sort(sort)
+        .skip(page * pageSize)
+        .limit(pageSize)
+        .exec(),
+    ]);
+    return { items, total, page, pageSize };
   }
 
   async createProduct(body: {
-    categoryId: string;
-    name: string;
-    description?: string;
-    priceKurus: number;
-    images?: { url: string; publicId?: string }[];
-    sortIndex?: number;
+    categoryId: string
+    name: string
+    description?: string
+    priceKurus: number
+    images?: { url: string; publicId?: string }[]
+    sortIndex?: number
+    optionGroups?: ProductOptionGroup[]
   }) {
-    const cat = await this.categoryModel.findById(body.categoryId).exec();
+    const cat = await this.categoryModel.findById(body.categoryId).exec()
     if (!cat) {
-      throw new NotFoundException('Category not found');
+      throw new NotFoundException('Category not found')
     }
+    const optionGroups = this.sanitizeOptionGroups(body.optionGroups ?? null)
     const created = await this.productModel.create({
       categoryId: cat._id,
       name: body.name,
@@ -155,7 +296,8 @@ export class MenuService {
       images: body.images ?? [],
       sortIndex: body.sortIndex ?? 0,
       isAvailable: true,
-    });
+      optionGroups,
+    })
     this.storeRealtime.notifyMenuChanged();
     return created;
   }
@@ -163,13 +305,14 @@ export class MenuService {
   async updateProduct(
     id: string,
     patch: Partial<{
-      name: string;
-      description: string;
-      priceKurus: number;
-      images: { url: string; publicId?: string }[];
-      isAvailable: boolean;
-      sortIndex: number;
-      categoryId: string;
+      name: string
+      description: string
+      priceKurus: number
+      images: { url: string; publicId?: string }[]
+      isAvailable: boolean
+      sortIndex: number
+      categoryId: string
+      optionGroups: ProductOptionGroup[] | null
     }>,
   ) {
     const p = await this.productModel.findById(id).exec();
@@ -183,7 +326,14 @@ export class MenuService {
       }
       p.categoryId = cat._id;
     }
-    Object.assign(p, patch);
+    const rest = { ...patch } as Record<string, unknown>
+    if (rest.optionGroups !== undefined) {
+      p.optionGroups = this.sanitizeOptionGroups(
+        (rest.optionGroups as ProductOptionGroup[] | null) ?? [],
+      )
+      delete rest.optionGroups
+    }
+    Object.assign(p, rest);
     await p.save();
     this.storeRealtime.notifyMenuChanged();
     return p;

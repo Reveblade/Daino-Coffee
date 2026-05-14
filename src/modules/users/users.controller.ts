@@ -5,7 +5,9 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  NotFoundException,
   Param,
+  Patch,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -20,7 +22,21 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from './schemas/user.schema';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+
+class UpdateProfileDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  lastName?: string;
+}
 
 class CreateAddressDto {
   @IsString()
@@ -51,6 +67,32 @@ class CreateStaffDto {
 
   @IsIn([UserRole.ADMIN, UserRole.CASHIER, UserRole.COURIER])
   role: UserRole.ADMIN | UserRole.CASHIER | UserRole.COURIER;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  lastName?: string;
+}
+
+class UpdateStaffDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  firstName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  @MaxLength(80)
+  lastName?: string;
 }
 
 @Controller('users')
@@ -67,9 +109,37 @@ export class UsersController {
     return {
       id: doc._id.toString(),
       phoneE164: doc.phoneE164,
+      firstName: doc.firstName,
+      lastName: doc.lastName,
       role: doc.role,
       addresses: doc.addresses,
       favoriteProductIds: doc.favoriteProductIds.map((id) => id.toString()),
+      profileComplete: this.users.isCustomerProfileComplete(doc),
+    };
+  }
+
+  @Patch('me')
+  async patchMe(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: UpdateProfileDto,
+  ) {
+    if (dto.firstName === undefined && dto.lastName === undefined) {
+      throw new BadRequestException('En az bir alan gerekli');
+    }
+    await this.users.updateProfile(user.sub, dto);
+    const doc = await this.users.findById(user.sub);
+    if (!doc) {
+      return { user: null };
+    }
+    return {
+      id: doc._id.toString(),
+      phoneE164: doc.phoneE164,
+      firstName: doc.firstName,
+      lastName: doc.lastName,
+      role: doc.role,
+      addresses: doc.addresses,
+      favoriteProductIds: doc.favoriteProductIds.map((id) => id.toString()),
+      profileComplete: this.users.isCustomerProfileComplete(doc),
     };
   }
 
@@ -137,7 +207,24 @@ export class AdminController {
     if (!isValidTurkishMobileE164(phoneE164)) {
       throw new BadRequestException('Invalid Turkish mobile');
     }
-    return this.users.createStaffUser(phoneE164, dto.role);
+    return this.users.createStaffUser(phoneE164, dto.role, {
+      firstName: dto.firstName,
+      lastName: dto.lastName,
+    });
+  }
+
+  @Patch('staff/:id')
+  @Roles(UserRole.ADMIN_OWNER, UserRole.ADMIN)
+  async updateStaff(@Param('id') id: string, @Body() dto: UpdateStaffDto) {
+    if (dto.firstName === undefined && dto.lastName === undefined) {
+      throw new BadRequestException('En az bir alan gerekli');
+    }
+    await this.users.updateStaffProfile(id, dto);
+    const doc = await this.users.findById(id);
+    if (!doc) {
+      throw new NotFoundException();
+    }
+    return doc;
   }
 
   @Delete('staff/:id')

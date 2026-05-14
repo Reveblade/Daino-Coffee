@@ -24,7 +24,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   async verifyOtp(@Body() dto: OtpVerifyDto) {
-    return this.authService.verifyOtp(dto.phone, dto.code);
+    return this.authService.verifyOtp(dto);
   }
 
   @Post('owner/login')

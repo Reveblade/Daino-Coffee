@@ -12,12 +12,10 @@ import {
 } from '../../common/utils/phone.util';
 import { UsersService } from '../users/users.service';
 import { UserRole } from '../users/schemas/user.schema';
-import {
-  OtpChallenge,
-  OtpChallengeDocument,
-} from '../users/schemas/otp-challenge.schema';
+import { OtpChallenge, OtpChallengeDocument } from '../users/schemas/otp-challenge.schema';
 import { SmsService } from '../sms/sms.service';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { OtpVerifyDto } from './dto/auth.dto';
 
 const OTP_TTL_MS = 10 * 60 * 1000;
 const MAX_OTP_ATTEMPTS = 5;
@@ -51,9 +49,12 @@ export class AuthService {
   }
 
   async verifyOtp(
-    rawPhone: string,
-    code: string,
+    dto: OtpVerifyDto,
   ): Promise<{ accessToken: string; refreshToken: string }> {
+    const rawPhone = dto.phone;
+    const code = dto.code;
+    const firstName = dto.firstName?.trim();
+    const lastName = dto.lastName?.trim();
     const phoneE164 = normalizeTurkishMobile(rawPhone);
     if (!isValidTurkishMobileE164(phoneE164)) {
       throw new UnauthorizedException('Invalid credentials');
@@ -76,9 +77,20 @@ export class AuthService {
 
     let user = await this.usersService.findByPhone(phoneE164);
     if (!user) {
-      user = await this.usersService.findOrCreateCustomer(phoneE164);
+      user = await this.usersService.findOrCreateCustomer(
+        phoneE164,
+        firstName && lastName ? { firstName, lastName } : undefined,
+      );
     } else if (user.role === UserRole.CUSTOMER) {
-      // existing customer
+      if (
+        (!user.firstName || !user.firstName.trim() || !user.lastName || !user.lastName.trim()) &&
+        firstName &&
+        lastName
+      ) {
+        user.firstName = firstName;
+        user.lastName = lastName;
+        await user.save();
+      }
     } else {
       // staff must pre-exist
     }

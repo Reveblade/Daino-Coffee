@@ -14,6 +14,7 @@ import {
   OrderDocument,
   OrderHistoryEntry,
 } from './schemas/order.schema'
+import { ProductDocument } from '../menu/schemas/product.schema'
 import { ShopSettingsService } from '../shop-settings/shop-settings.service'
 import { TablesService } from '../tables/tables.service'
 import { MenuService } from '../menu/menu.service'
@@ -87,9 +88,157 @@ export class OrdersService {
     }
   }
 
+  private cashierHistorySince(): Date {
+    return new Date(Date.now() - 24 * 60 * 60 * 1000)
+  }
+
+  /** Kasiyer yalnızca son 24 saatte kapanan (ödeme/iptal) sipariş geçmişini görebilir. */
+  private assertCashierCanViewClosedOrder(
+    order: OrderDocument,
+    actor: JwtPayload,
+  ) {
+    if (actor.role !== UserRole.CASHIER) return
+    if (order.status !== 'PAID' && order.status !== 'CANCELLED') return
+    const u =
+      (order.get('updatedAt') as Date | undefined) ??
+      (order.get('createdAt') as Date | undefined)
+    if (u && u < this.cashierHistorySince()) {
+      throw new ForbiddenException()
+    }
+  }
+
+  private stableOptionKey(
+    s?: {
+      groupId: string
+      selectedChoices?: { id: string }[]
+    }[],
+  ): string {
+    if (!s?.length) return ''
+    return JSON.stringify(
+      [...s]
+        .sort((a, b) => a.groupId.localeCompare(b.groupId))
+        .map((g) => ({
+          g: g.groupId,
+          c: [...(g.selectedChoices ?? [])]
+            .map((x) => x.id)
+            .sort(),
+        })),
+    )
+  }
+
+  private formatOptionsLine(
+    s?: {
+      groupLabel?: string
+      groupId: string
+      selectedChoices?: { label: string; extraPriceKurus?: number }[]
+    }[],
+  ): string | undefined {
+    if (!s?.length) return undefined
+    const t = s
+      .map((g) => {
+        const labels = g.selectedChoices
+          ?.map((c) => {
+            const extra = Number(c.extraPriceKurus) || 0
+            const px =
+              extra > 0
+                ? ` (+${(extra / 100).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ₺)`
+                : ''
+            return `${c.label}${px}`
+          })
+          .join(', ')
+        if (!labels) return null
+        return `${g.groupLabel ?? g.groupId}: ${labels}`
+      })
+      .filter(Boolean)
+      .join(' | ')
+    return t || undefined
+  }
+
+  private buildOptionSnapshots(
+    product: ProductDocument,
+    raw?: { groupId: string; selectedChoiceIds?: string[] }[],
+  ): {
+    groupId: string
+    groupLabel?: string
+    kind: string
+    selectedChoices: { id: string; label: string; extraPriceKurus: number }[]
+  }[] {
+    const groups = product.optionGroups ?? []
+    const map = new Map(groups.map((g) => [g.id, g]))
+    if (!raw?.length) {
+      return []
+    }
+    const seenG = new Set<string>()
+    const out: {
+      groupId: string
+      groupLabel?: string
+      kind: string
+      selectedChoices: { id: string; label: string; extraPriceKurus: number }[]
+    }[] = []
+    for (const entry of raw) {
+      if (!entry?.groupId?.trim()) {
+        throw new BadRequestException('Geçersiz seçenek grubu')
+      }
+      if (seenG.has(entry.groupId)) {
+        throw new BadRequestException('Yinelenen seçenek grubu')
+      }
+      seenG.add(entry.groupId)
+      const g = map.get(entry.groupId)
+      if (!g) {
+        throw new BadRequestException('Bilinmeyen seçenek grubu')
+      }
+      const ids = Array.isArray(entry.selectedChoiceIds)
+        ? [
+            ...new Set(
+              entry.selectedChoiceIds
+                .map((x) => String(x).trim())
+                .filter(Boolean),
+            ),
+          ]
+        : []
+      if (g.kind === 'SINGLE' && ids.length > 1) {
+        throw new BadRequestException(`${g.label}: yalnızca bir seçim yapılabilir`)
+      }
+      const choiceMap = new Map(g.choices.map((c) => [c.id, c]))
+      const selectedChoices = ids.map((id) => {
+        const c = choiceMap.get(id)
+        if (!c) {
+          throw new BadRequestException(`Geçersiz seçim: ${g.label}`)
+        }
+        const extra = Number((c as { extraPriceKurus?: unknown }).extraPriceKurus)
+        const extraPriceKurus =
+          Number.isFinite(extra) && extra >= 0 ? Math.round(extra) : 0
+        return { id: c.id, label: c.label, extraPriceKurus }
+      })
+      out.push({
+        groupId: g.id,
+        groupLabel: g.label,
+        kind: g.kind,
+        selectedChoices,
+      })
+    }
+    return out.sort((a, b) => a.groupId.localeCompare(b.groupId))
+  }
+
+  private sumOptionExtrasKurus(
+    snapshots: { selectedChoices: { extraPriceKurus?: number }[] }[],
+  ): number {
+    let sum = 0
+    for (const g of snapshots) {
+      for (const c of g.selectedChoices ?? []) {
+        sum += Number(c.extraPriceKurus) || 0
+      }
+    }
+    return sum
+  }
+
   async createInPlace(
     tableSlug: string,
-    items: { productId: string; quantity?: number }[],
+    items: {
+      productId: string
+      quantity?: number
+      options?: { groupId: string; selectedChoiceIds?: string[] }[]
+    }[],
   ) {
     if (!(await this.shopSettings.acceptsTableOrders())) {
       throw new ForbiddenException('Self-service: table orders disabled')
@@ -133,29 +282,71 @@ export class OrdersService {
       name: string
       quantity: number
       unitPriceKurus: number
+      optionSelections?: {
+        groupId: string
+        groupLabel?: string
+        kind: string
+        selectedChoices: { id: string; label: string; extraPriceKurus?: number }[]
+      }[]
     }[],
     additions: {
       productId: Types.ObjectId
       name: string
       quantity: number
       unitPriceKurus: number
+      optionSelections?: {
+        groupId: string
+        groupLabel?: string
+        kind: string
+        selectedChoices: { id: string; label: string; extraPriceKurus?: number }[]
+      }[]
     }[],
   ) {
+    const mapChoice = (c: {
+      id: string
+      label: string
+      extraPriceKurus?: number
+    }) => ({
+      id: c.id,
+      label: c.label,
+      extraPriceKurus: Number(c.extraPriceKurus) || 0,
+    })
     const result = existing.map((it) => ({
       productId: new Types.ObjectId(it.productId),
       name: it.name,
       quantity: it.quantity,
       unitPriceKurus: it.unitPriceKurus,
+      optionSelections: it.optionSelections?.length
+        ? it.optionSelections.map((s) => ({
+            groupId: s.groupId,
+            groupLabel: s.groupLabel,
+            kind: s.kind,
+            selectedChoices: s.selectedChoices.map(mapChoice),
+          }))
+        : undefined,
     }))
     for (const add of additions) {
       const k = String(add.productId)
-      const idx = result.findIndex((x) => String(x.productId) === k)
+      const addKey = this.stableOptionKey(add.optionSelections)
+      const idx = result.findIndex(
+        (x) =>
+          String(x.productId) === k &&
+          this.stableOptionKey(x.optionSelections) === addKey,
+      )
       if (idx >= 0) {
         result[idx] = {
           productId: result[idx].productId,
           name: add.name,
           quantity: Math.min(result[idx].quantity + add.quantity, 99),
           unitPriceKurus: add.unitPriceKurus,
+          optionSelections: result[idx].optionSelections?.length
+            ? result[idx].optionSelections!.map((s) => ({
+                groupId: s.groupId,
+                groupLabel: s.groupLabel,
+                kind: s.kind,
+                selectedChoices: s.selectedChoices.map(mapChoice),
+              }))
+            : undefined,
         }
       } else {
         result.push({
@@ -163,6 +354,14 @@ export class OrdersService {
           name: add.name,
           quantity: add.quantity,
           unitPriceKurus: add.unitPriceKurus,
+          optionSelections: add.optionSelections?.length
+            ? add.optionSelections.map((s) => ({
+                groupId: s.groupId,
+                groupLabel: s.groupLabel,
+                kind: s.kind,
+                selectedChoices: s.selectedChoices.map(mapChoice),
+              }))
+            : undefined,
         })
       }
     }
@@ -189,12 +388,19 @@ export class OrdersService {
       name: string
       quantity: number
       unitPriceKurus: number
+      optionSelections?: {
+        groupId: string
+        groupLabel?: string
+        kind: string
+        selectedChoices: { id: string; label: string; extraPriceKurus?: number }[]
+      }[]
     }[],
   ): Promise<OrderDocument | null> {
     const addedMeta = additions.map((a) => ({
       name: a.name,
       quantity: a.quantity,
       unitPriceKurus: a.unitPriceKurus,
+      optionsLine: this.formatOptionsLine(a.optionSelections),
     }))
     const maxAttempts = 12
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -215,6 +421,12 @@ export class OrdersService {
           name: string
           quantity: number
           unitPriceKurus: number
+          optionSelections?: {
+            groupId: string
+            groupLabel?: string
+            kind: string
+            selectedChoices: { id: string; label: string; extraPriceKurus?: number }[]
+          }[]
         }[],
         additions,
       )
@@ -259,7 +471,11 @@ export class OrdersService {
   async createOnline(
     actor: JwtPayload,
     body: {
-      items: { productId: string; quantity?: number }[]
+      items: {
+        productId: string
+        quantity?: number
+        options?: { groupId: string; selectedChoiceIds?: string[] }[]
+      }[]
       addressIndex: number
     },
   ) {
@@ -270,6 +486,7 @@ export class OrdersService {
     if (!user) {
       throw new NotFoundException()
     }
+    this.usersService.assertCustomerProfileComplete(user)
     const addr = user.addresses[body.addressIndex]
     if (!addr) {
       throw new BadRequestException('Invalid address index')
@@ -279,6 +496,11 @@ export class OrdersService {
       channel: OrderChannel.ONLINE,
       status: ONLINE.PLACED,
       customerId: user._id,
+      deliveryRecipient: {
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phoneE164: user.phoneE164,
+      },
       deliveryAddress: {
         label: addr.label,
         line1: addr.line1,
@@ -302,13 +524,23 @@ export class OrdersService {
   }
 
   private async buildLineItems(
-    items: { productId: string; quantity?: number }[],
+    items: {
+      productId: string
+      quantity?: number
+      options?: { groupId: string; selectedChoiceIds?: string[] }[]
+    }[],
   ): Promise<{
     lineItems: {
       productId: Types.ObjectId
       name: string
       quantity: number
       unitPriceKurus: number
+      optionSelections?: {
+        groupId: string
+        groupLabel?: string
+        kind: string
+        selectedChoices: { id: string; label: string; extraPriceKurus?: number }[]
+      }[]
     }[]
     total: number
   }> {
@@ -320,18 +552,28 @@ export class OrdersService {
       name: string
       quantity: number
       unitPriceKurus: number
+      optionSelections?: {
+        groupId: string
+        groupLabel?: string
+        kind: string
+        selectedChoices: { id: string; label: string; extraPriceKurus?: number }[]
+      }[]
     }[] = []
     let total = 0
     for (const it of items) {
       const p = await this.menuService.getProductForOrder(it.productId)
       const qty = Math.min(Math.max(it.quantity ?? 1, 1), 99)
+      const optionSnapshots = this.buildOptionSnapshots(p, it.options)
+      const extras = this.sumOptionExtrasKurus(optionSnapshots)
+      const unitPriceKurus = p.priceKurus + extras
       lineItems.push({
         productId: p._id,
         name: p.name,
         quantity: qty,
-        unitPriceKurus: p.priceKurus,
+        unitPriceKurus,
+        optionSelections: optionSnapshots.length ? optionSnapshots : undefined,
       })
-      total += p.priceKurus * qty
+      total += unitPriceKurus * qty
     }
     return { lineItems, total }
   }
@@ -349,6 +591,19 @@ export class OrdersService {
   ) {
     if (actor.role === UserRole.COURIER) {
       throw new ForbiddenException('Use courier endpoints')
+    }
+    if (actor.role === UserRole.CUSTOMER) {
+      const filter: Record<string, unknown> = {
+        customerId: new Types.ObjectId(actor.sub),
+        channel: OrderChannel.ONLINE,
+        status: { $nin: [ONLINE.PAID, ONLINE.CANCELLED] },
+      }
+      const limit = Math.min(query.limit ?? 30, 50)
+      return this.orderModel
+        .find(filter)
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .exec()
     }
     if (
       ![UserRole.ADMIN_OWNER, UserRole.ADMIN, UserRole.CASHIER].includes(
@@ -374,12 +629,152 @@ export class OrdersService {
       }
     }
     const limit = Math.min(query.limit ?? 50, 200)
+    const mongoFilter =
+      actor.role === UserRole.CASHIER
+        ? {
+            $and: [
+              filter,
+              {
+                $or: [
+                  { status: { $nin: ['PAID', 'CANCELLED'] } },
+                  {
+                    status: { $in: ['PAID', 'CANCELLED'] },
+                    updatedAt: { $gte: this.cashierHistorySince() },
+                  },
+                ],
+              },
+            ],
+          }
+        : filter
     return this.orderModel
-      .find(filter)
+      .find(mongoFilter)
       .populate({ path: 'tableId', select: 'number label publicSlug' })
       .sort({ createdAt: -1 })
       .limit(limit)
       .exec()
+  }
+
+  async listOrderHistory(
+    actor: JwtPayload,
+    query: {
+      q?: string
+      page?: number
+      pageSize?: number
+      channel?: OrderChannel
+    },
+  ) {
+    if (actor.role === UserRole.COURIER) {
+      throw new ForbiddenException('Use courier endpoints')
+    }
+    if (actor.role === UserRole.CUSTOMER) {
+      const pageSize = Math.min(Math.max(query.pageSize ?? 20, 1), 50)
+      const page = Math.max(Number.isFinite(query.page) ? query.page! : 0, 0)
+      const and: Record<string, unknown>[] = [
+        { customerId: new Types.ObjectId(actor.sub) },
+        { channel: OrderChannel.ONLINE },
+        { status: { $in: [ONLINE.PAID, ONLINE.CANCELLED] } },
+      ]
+      const rawQ = query.q?.trim().slice(0, 100) ?? ''
+      if (rawQ.length > 0) {
+        const escaped = rawQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        and.push({
+          $or: [
+            {
+              $expr: {
+                $regexMatch: {
+                  input: { $toString: '$_id' },
+                  regex: escaped,
+                  options: 'i',
+                },
+              },
+            },
+            { 'items.name': { $regex: escaped, $options: 'i' } },
+          ],
+        })
+      }
+      const filter = and.length === 1 ? and[0]! : { $and: and }
+      const [total, rows] = await Promise.all([
+        this.orderModel.countDocuments(filter),
+        this.orderModel
+          .find(filter)
+          .sort({ updatedAt: -1, _id: -1 })
+          .skip(page * pageSize)
+          .limit(pageSize)
+          .exec(),
+      ])
+      return {
+        items: rows,
+        total,
+        page,
+        pageSize,
+      }
+    }
+    if (
+      ![UserRole.ADMIN_OWNER, UserRole.ADMIN, UserRole.CASHIER].includes(
+        actor.role,
+      )
+    ) {
+      throw new ForbiddenException()
+    }
+
+    const pageSize = Math.min(Math.max(query.pageSize ?? 20, 1), 50)
+    const pageRaw = query.page ?? 0
+    const page = Math.max(
+      0,
+      Math.floor(typeof pageRaw === 'number' ? pageRaw : parseInt(String(pageRaw), 10)) || 0,
+    )
+
+    const and: Record<string, unknown>[] = [
+      { status: { $in: ['PAID', 'CANCELLED'] } },
+    ]
+    if (query.channel) {
+      and.push({ channel: query.channel })
+    }
+    if (actor.role === UserRole.CASHIER) {
+      and.push({ updatedAt: { $gte: this.cashierHistorySince() } })
+    }
+
+    const rawQ = query.q?.trim().slice(0, 100) ?? ''
+    if (rawQ.length > 0) {
+      const escaped = rawQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      and.push({
+        $or: [
+          {
+            $expr: {
+              $regexMatch: {
+                input: { $toString: '$_id' },
+                regex: escaped,
+                options: 'i',
+              },
+            },
+          },
+          { 'items.name': { $regex: escaped, $options: 'i' } },
+          { 'deliveryAddress.line1': { $regex: escaped, $options: 'i' } },
+          { 'deliveryAddress.label': { $regex: escaped, $options: 'i' } },
+          { 'deliveryAddress.city': { $regex: escaped, $options: 'i' } },
+        ],
+      })
+    }
+
+    const filter = and.length === 1 ? and[0]! : { $and: and }
+
+    const [total, rows] = await Promise.all([
+      this.orderModel.countDocuments(filter),
+      this.orderModel
+        .find(filter)
+        .populate({ path: 'tableId', select: 'number label publicSlug' })
+        .sort({ updatedAt: -1, _id: -1 })
+        .skip(page * pageSize)
+        .limit(pageSize)
+        .exec(),
+    ])
+
+    return {
+      items: rows,
+      total,
+      page,
+      pageSize,
+    }
   }
 
   async getOrder(actor: JwtPayload, id: string): Promise<OrderDocument> {
@@ -406,6 +801,7 @@ export class OrdersService {
       return order
     }
     this.ensureStaff(actor)
+    this.assertCashierCanViewClosedOrder(order, actor)
     return order
   }
 

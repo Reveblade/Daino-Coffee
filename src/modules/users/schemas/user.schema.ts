@@ -39,6 +39,12 @@ export class User {
   @Prop({ required: true, unique: true, index: true })
   phoneE164: string;
 
+  @Prop({ trim: true })
+  firstName?: string;
+
+  @Prop({ trim: true })
+  lastName?: string;
+
   @Prop({ type: String, enum: UserRole, required: true })
   role: UserRole;
 

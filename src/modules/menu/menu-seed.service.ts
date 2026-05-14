@@ -16,7 +16,10 @@ export class MenuSeedService implements OnApplicationBootstrap {
   }
 
   private async seedIfEmpty(): Promise<void> {
-    const existing = await this.menu.listCategoriesAdmin();
+    const existingRaw = await this.menu.listCategoriesAdmin();
+    const existing = Array.isArray(existingRaw)
+      ? existingRaw
+      : existingRaw.items;
     if (existing.length > 0) {
       return;
     }

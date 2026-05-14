@@ -45,8 +45,8 @@ async function bootstrap() {
   app.setGlobalPrefix('v1', {
     exclude: [{ path: 'healthz', method: RequestMethod.GET }],
   });
-  const port = process.env.PORT ?? 3000;
-  await app.listen(port);
-  Logger.log(`Listening on http://localhost:${port}`, 'Bootstrap');
+  const port = parseInt(String(process.env.PORT ?? '3000'), 10);
+  await app.listen(port, '0.0.0.0');
+  Logger.log(`Listening on 0.0.0.0:${port}`, 'Bootstrap');
 }
 bootstrap();

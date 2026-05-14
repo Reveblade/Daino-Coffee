@@ -13,6 +13,40 @@ export enum CollectionMethod {
 }
 
 @Schema({ _id: false })
+export class OrderItemSelectedChoice {
+  @Prop({ required: true })
+  id: string;
+
+  @Prop({ required: true })
+  label: string;
+
+  @Prop({ default: 0, min: 0 })
+  extraPriceKurus?: number;
+}
+
+const OrderItemSelectedChoiceSchema =
+  SchemaFactory.createForClass(OrderItemSelectedChoice);
+
+@Schema({ _id: false })
+export class OrderItemOptionSelection {
+  @Prop({ required: true })
+  groupId: string;
+
+  @Prop()
+  groupLabel?: string;
+
+  @Prop({ required: true, enum: ['SELECTABLE', 'SINGLE'] })
+  kind: string;
+
+  @Prop({ type: [OrderItemSelectedChoiceSchema], default: [] })
+  selectedChoices: OrderItemSelectedChoice[];
+}
+
+const OrderItemOptionSelectionSchema = SchemaFactory.createForClass(
+  OrderItemOptionSelection,
+);
+
+@Schema({ _id: false })
 export class OrderItem {
   @Prop({ type: Types.ObjectId, ref: 'Product', required: true })
   productId: Types.ObjectId;
@@ -25,6 +59,10 @@ export class OrderItem {
 
   @Prop({ required: true, min: 0 })
   unitPriceKurus: number;
+
+  /** Sipariş anındaki seçimler (ürün şeması değişse bile metin korunur). */
+  @Prop({ type: [OrderItemOptionSelectionSchema], default: [] })
+  optionSelections?: OrderItemOptionSelection[];
 }
 
 const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
@@ -51,6 +89,23 @@ export class AddressSnapshot {
 }
 
 const AddressSnapshotSchema = SchemaFactory.createForClass(AddressSnapshot);
+
+/** Sipariş anındaki teslim alıcısı (profil güncellense bile sabit kalır). */
+@Schema({ _id: false })
+export class DeliveryRecipientSnapshot {
+  @Prop({ trim: true })
+  firstName?: string;
+
+  @Prop({ trim: true })
+  lastName?: string;
+
+  @Prop({ trim: true })
+  phoneE164?: string;
+}
+
+const DeliveryRecipientSnapshotSchema = SchemaFactory.createForClass(
+  DeliveryRecipientSnapshot,
+);
 
 @Schema({ _id: false })
 export class OrderHistoryEntry {
@@ -97,6 +152,9 @@ export class Order {
 
   @Prop({ type: AddressSnapshotSchema })
   deliveryAddress?: AddressSnapshot;
+
+  @Prop({ type: DeliveryRecipientSnapshotSchema })
+  deliveryRecipient?: DeliveryRecipientSnapshot;
 
   @Prop({ type: [OrderItemSchema], required: true })
   items: OrderItem[];

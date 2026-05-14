@@ -31,7 +31,8 @@ export const envValidationSchema = Joi.object({
   NETGSM_PASSWORD: Joi.string().allow('').default(''),
   NETGSM_MSGHEADER: Joi.string().allow('').default(''),
   NETGSM_APPNAME: Joi.string().allow('').default(''),
-  NETGSM_OTP_DISABLED: Joi.boolean().default(false),
+  /** String env vars from Cloud Run / shells; read as flag in configuration. */
+  NETGSM_OTP_DISABLED: Joi.string().valid('true', 'false', '').default(''),
   CLOUDINARY_CLOUD_NAME: Joi.string().allow('').default(''),
   CLOUDINARY_API_KEY: Joi.string().allow('').default(''),
   CLOUDINARY_API_SECRET: Joi.string().allow('').default(''),

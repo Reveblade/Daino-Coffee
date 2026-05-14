@@ -23,6 +23,16 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
+class OrderItemOptionInputDto {
+  @IsString()
+  groupId: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  selectedChoiceIds?: string[];
+}
+
 class OrderItemInputDto {
   @IsString()
   productId: string;
@@ -31,6 +41,12 @@ class OrderItemInputDto {
   @IsNumber()
   @Min(1)
   quantity?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => OrderItemOptionInputDto)
+  options?: OrderItemOptionInputDto[];
 }
 
 class CreateInPlaceOrderDto {
@@ -104,6 +120,24 @@ export class OrdersController {
       from,
       to,
       limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  /** Tamamlanmış / iptal siparişler: arama + sayfalama (`:id` rotasından önce tanımlı). */
+  @Get('history')
+  @UseGuards(JwtAuthGuard)
+  listHistory(
+    @CurrentUser() user: JwtPayload,
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('channel') channel?: OrderChannel,
+  ) {
+    return this.orders.listOrderHistory(user, {
+      q,
+      page: page ? parseInt(page, 10) : undefined,
+      pageSize: pageSize ? parseInt(pageSize, 10) : undefined,
+      channel,
     });
   }
 

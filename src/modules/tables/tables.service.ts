@@ -13,8 +13,6 @@ import {
   TableDocument,
   generateTableSlug,
 } from './schemas/table.schema';
-import { UploadsService } from '../uploads/uploads.service';
-import * as QRCode from 'qrcode';
 
 @Injectable()
 export class TablesService {
@@ -23,7 +21,6 @@ export class TablesService {
   constructor(
     @InjectModel(Table.name) private readonly tableModel: Model<TableDocument>,
     private readonly config: ConfigService,
-    private readonly uploads: UploadsService,
   ) {}
 
   private baseUrl(): string {
@@ -46,13 +43,6 @@ export class TablesService {
       const nextUrl = this.menuUrlForSlug(t.publicSlug);
       if (t.menuUrl === nextUrl) continue;
       t.menuUrl = nextUrl;
-      if (this.uploads.isConfigured()) {
-        try {
-          await this.refreshQrImage(t);
-        } catch {
-          /* optional asset */
-        }
-      }
       await t.save();
       updated += 1;
     }
@@ -76,14 +66,6 @@ export class TablesService {
         isActive: true,
         isSystem: true,
       });
-    }
-    if (this.uploads.isConfigured() && !t.qrImageUrl) {
-      try {
-        await this.refreshQrImage(t);
-        await t.save();
-      } catch {
-        /* optional asset */
-      }
     }
     return t;
   }
@@ -114,7 +96,6 @@ export class TablesService {
       isActive: true,
       isSystem: false,
     });
-    await this.refreshQrImage(table);
     return table.save();
   }
 
@@ -129,30 +110,22 @@ export class TablesService {
     await this.tableModel.deleteOne({ _id: t._id }).exec();
   }
 
-  async refreshQrImage(table: TableDocument): Promise<void> {
-    const png = await QRCode.toBuffer(table.menuUrl, {
-      type: 'png',
-      width: 512,
-    });
-    const uploaded = await this.uploads.uploadBuffer(
-      png,
-      `qr/table-${table.number}-${table.publicSlug}.png`,
-    );
-    if (uploaded?.secure_url) {
-      table.qrImageUrl = uploaded.secure_url;
-    }
-  }
-
   async regenerateQr(id: string): Promise<TableDocument> {
     const t = await this.tableModel.findById(id).exec();
     if (!t) {
       throw new NotFoundException();
     }
     const slug = generateTableSlug();
+    const menuUrl = this.menuUrlForSlug(slug);
+    await this.tableModel
+      .updateOne(
+        { _id: t._id },
+        { $set: { publicSlug: slug, menuUrl }, $unset: { qrImageUrl: '' } },
+      )
+      .exec();
     t.publicSlug = slug;
-    t.menuUrl = this.menuUrlForSlug(slug);
-    await this.refreshQrImage(t);
-    await t.save();
+    t.menuUrl = menuUrl;
+    delete t.qrImageUrl;
     return t;
   }
 }

@@ -1,6 +1,7 @@
 import {
   Injectable,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
@@ -25,7 +26,27 @@ export class UsersService {
     return this.userModel.findOne({ phoneE164 }).exec();
   }
 
-  async findOrCreateCustomer(phoneE164: string): Promise<UserDocument> {
+  isCustomerProfileComplete(user: UserDocument): boolean {
+    if (user.role !== UserRole.CUSTOMER) {
+      return true;
+    }
+    const fn = (user.firstName?.trim() ?? '').length;
+    const ln = (user.lastName?.trim() ?? '').length;
+    return fn >= 2 && ln >= 2;
+  }
+
+  assertCustomerProfileComplete(user: UserDocument): void {
+    if (!this.isCustomerProfileComplete(user)) {
+      throw new ForbiddenException(
+        'Bu işlem için önce Profilim bölümünden isim ve soyisminizi girin (en az 2 karakter).',
+      );
+    }
+  }
+
+  async findOrCreateCustomer(
+    phoneE164: string,
+    profile?: { firstName?: string; lastName?: string },
+  ): Promise<UserDocument> {
     const existing = await this.findByPhone(phoneE164);
     if (existing) {
       if (existing.role !== UserRole.CUSTOMER) {
@@ -35,8 +56,12 @@ export class UsersService {
       }
       return existing;
     }
+    const fn = profile?.firstName?.trim();
+    const ln = profile?.lastName?.trim();
     return this.userModel.create({
       phoneE164,
+      firstName: fn?.length ? fn : undefined,
+      lastName: ln?.length ? ln : undefined,
       role: UserRole.CUSTOMER,
       deletable: true,
       roleLocked: false,
@@ -48,6 +73,7 @@ export class UsersService {
   async createStaffUser(
     phoneE164: string,
     role: UserRole.ADMIN | UserRole.CASHIER | UserRole.COURIER,
+    profile?: { firstName?: string; lastName?: string },
   ): Promise<UserDocument> {
     const existing = await this.findByPhone(phoneE164);
     if (existing) {
@@ -65,12 +91,61 @@ export class UsersService {
     }
     return this.userModel.create({
       phoneE164,
+      firstName: profile?.firstName?.trim() || undefined,
+      lastName: profile?.lastName?.trim() || undefined,
       role,
       deletable: true,
       roleLocked: false,
       addresses: [],
       favoriteProductIds: [],
     });
+  }
+
+  async updateStaffProfile(
+    userId: string,
+    body: { firstName?: string; lastName?: string },
+  ): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundException();
+    }
+    if (
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.CASHIER &&
+      user.role !== UserRole.COURIER
+    ) {
+      throw new ConflictException('Not a staff user');
+    }
+    if (body.firstName !== undefined) {
+      const t = body.firstName.trim();
+      user.firstName = t.length ? t : undefined;
+    }
+    if (body.lastName !== undefined) {
+      const t = body.lastName.trim();
+      user.lastName = t.length ? t : undefined;
+    }
+    await user.save();
+    return user;
+  }
+
+  async updateProfile(
+    userId: string,
+    body: { firstName?: string; lastName?: string },
+  ): Promise<UserDocument> {
+    const user = await this.userModel.findById(userId).exec();
+    if (!user) {
+      throw new NotFoundException();
+    }
+    if (body.firstName !== undefined) {
+      const t = body.firstName.trim();
+      user.firstName = t.length ? t : undefined;
+    }
+    if (body.lastName !== undefined) {
+      const t = body.lastName.trim();
+      user.lastName = t.length ? t : undefined;
+    }
+    await user.save();
+    return user;
   }
 
   async ensureOwnerUser(
@@ -171,6 +246,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException();
     }
+    this.assertCustomerProfileComplete(user);
     user.addresses.push({
       label: body.label,
       line1: body.line1,
@@ -201,6 +277,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException();
     }
+    this.assertCustomerProfileComplete(user);
     const pid = new Types.ObjectId(productId);
     const idx = user.favoriteProductIds.findIndex((id) => id.equals(pid));
     if (idx >= 0) {

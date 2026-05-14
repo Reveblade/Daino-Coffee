@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { MenuService } from './menu.service';
@@ -16,6 +17,7 @@ import { UserRole } from '../users/schemas/user.schema';
 import {
   IsArray,
   IsBoolean,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -31,6 +33,35 @@ class ImageDto {
   @IsOptional()
   @IsString()
   publicId?: string;
+}
+
+class ProductOptionChoiceDto {
+  @IsString()
+  id: string;
+
+  @IsString()
+  label: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  extraPriceKurus?: number;
+}
+
+class ProductOptionGroupDto {
+  @IsString()
+  id: string;
+
+  @IsString()
+  label: string;
+
+  @IsIn(['SELECTABLE', 'SINGLE'])
+  kind: 'SELECTABLE' | 'SINGLE';
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductOptionChoiceDto)
+  choices: ProductOptionChoiceDto[];
 }
 
 class CreateCategoryDto {
@@ -78,6 +109,12 @@ class CreateProductDto {
   @IsOptional()
   @IsNumber()
   sortIndex?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductOptionGroupDto)
+  optionGroups?: ProductOptionGroupDto[];
 }
 
 class PatchCategoryDto {
@@ -137,6 +174,12 @@ class PatchProductDto {
   @IsOptional()
   @IsString()
   categoryId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductOptionGroupDto)
+  optionGroups?: ProductOptionGroupDto[];
 }
 
 @Controller()
@@ -151,8 +194,23 @@ export class MenuController {
   @Get('admin/menu/categories')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN_OWNER, UserRole.ADMIN)
-  adminCategories() {
-    return this.menu.listCategoriesAdmin();
+  adminCategories(
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    const p =
+      page !== undefined && page !== '' ? parseInt(page, 10) : Number.NaN;
+    const ps =
+      pageSize !== undefined && pageSize !== ''
+        ? parseInt(pageSize, 10)
+        : Number.NaN;
+    const usePaging =
+      Number.isFinite(p) && Number.isFinite(ps) && p >= 0 && ps >= 1;
+    if (usePaging) {
+      return this.menu.listCategoriesAdmin({ q, page: p, pageSize: ps });
+    }
+    return this.menu.listCategoriesAdmin(q ? { q } : undefined);
   }
 
   @Post('admin/menu/categories')
@@ -179,8 +237,23 @@ export class MenuController {
   @Get('admin/menu/products')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN_OWNER, UserRole.ADMIN)
-  adminProducts() {
-    return this.menu.listProductsAdmin();
+  adminProducts(
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    const p =
+      page !== undefined && page !== '' ? parseInt(page, 10) : Number.NaN;
+    const ps =
+      pageSize !== undefined && pageSize !== ''
+        ? parseInt(pageSize, 10)
+        : Number.NaN;
+    const usePaging =
+      Number.isFinite(p) && Number.isFinite(ps) && p >= 0 && ps >= 1;
+    if (usePaging) {
+      return this.menu.listProductsAdmin({ q, page: p, pageSize: ps });
+    }
+    return this.menu.listProductsAdmin(q ? { q } : undefined);
   }
 
   @Post('admin/menu/products')
