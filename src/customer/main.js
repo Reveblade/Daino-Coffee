@@ -1023,19 +1023,135 @@ function renderAccountSiparislerim(panel, me) {
 }
 
 /**
+ * Phone OTP girişi — hesap sayfasında ortalanmış kart içinde (modal yok).
+ * @param {HTMLElement} container
+ * @param {{ onSuccess?: () => void }} [opts]
+ */
+function mountCustomerPhoneAuth(container, opts = {}) {
+  const onSuccess = opts.onSuccess || (() => render().catch(console.error));
+  let phone = '';
+
+  function viewPhone() {
+    container.innerHTML = '';
+    const err = el('p', { class: 'c-error c-auth-err' });
+    container.append(
+      el('h2', { text: 'Giriş' }),
+      el('p', {
+        class: 'c-muted',
+        text: 'Türk cep: 5xx…, 05xx…, 90… veya +90… (boşluk/tire olabilir).',
+      }),
+      el('input', {
+        class: 'c-input c-auth-input-phone',
+        placeholder: 'örn. 5551112233 veya 0555…',
+        type: 'tel',
+        autocomplete: 'tel',
+      }),
+      err,
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'c-btn',
+          onclick: async () => {
+            const inp = /** @type {HTMLInputElement | null} */ (
+              container.querySelector('.c-auth-input-phone')
+            );
+            phone = (inp?.value ?? '').trim();
+            err.textContent = '';
+            try {
+              await api('/auth/otp/request', {
+                method: 'POST',
+                body: JSON.stringify({ phone }),
+              });
+              viewCode();
+            } catch (e) {
+              err.textContent = /** @type {Error} */ (e).message;
+            }
+          },
+        },
+        ['Kod gönder'],
+      ),
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'c-link',
+          style: 'margin-top:12px',
+          onclick: () => setRoute('menu'),
+        },
+        ['Ürünlere dön'],
+      ),
+    );
+  }
+
+  function viewCode() {
+    container.innerHTML = '';
+    const err2 = el('p', { class: 'c-error c-auth-err' });
+    container.append(
+      el('h2', { text: 'SMS kodu' }),
+      el('p', {
+        class: 'c-muted',
+        style: 'margin-bottom:8px',
+        text: 'Hesap telefon numaranızla oluşturulur. İsim ve soyisim, girişten sonra Hesap > Profilim’den zorunludur (web siparişi için).',
+      }),
+      el('input', {
+        class: 'c-input c-auth-input-code',
+        placeholder: '6 haneli kod',
+        maxlength: '6',
+        inputmode: 'numeric',
+        autocomplete: 'one-time-code',
+      }),
+      err2,
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'c-btn',
+          onclick: async () => {
+            const codeInp = /** @type {HTMLInputElement | null} */ (
+              container.querySelector('.c-auth-input-code')
+            );
+            const code = (codeInp?.value ?? '').trim();
+            err2.textContent = '';
+            try {
+              const { accessToken, refreshToken } = await api('/auth/otp/verify', {
+                method: 'POST',
+                body: JSON.stringify({
+                  phone,
+                  code,
+                }),
+              });
+              setToken(accessToken, refreshToken);
+              onSuccess();
+            } catch (e) {
+              err2.textContent = /** @type {Error} */ (e).message;
+            }
+          },
+        },
+        ['Doğrula'],
+      ),
+      el(
+        'button',
+        { type: 'button', class: 'c-link', onclick: viewPhone },
+        ['Telefonu değiştir'],
+      ),
+    );
+  }
+
+  viewPhone();
+}
+
+/**
  * @param {HTMLElement} root
  * @param {any | null | undefined} precookedMe already fetched in `render()` (optional)
  */
 function renderAccount(root, precookedMe) {
   const tok = getToken() || getRefreshToken();
   if (!tok) {
+    const card = el('div', { class: 'c-modal c-auth-card' });
+    mountCustomerPhoneAuth(card, { onSuccess: () => render().catch(console.error) });
     root.append(
-      el('p', { class: 'c-muted', text: 'Telefon ile giriş yapın.' }),
-      el(
-        'button',
-        { class: 'c-btn', onclick: () => openAuthModal() },
-        ['Giriş / Kayıt'],
-      ),
+      el('div', { class: 'c-auth-page' }, [card]),
     );
     return;
   }
@@ -1153,7 +1269,14 @@ function renderCart(root, me) {
       el('p', { class: 'c-error', text: 'Sipariş için giriş yapın.' }),
       el(
         'button',
-        { class: 'c-btn c-btn--ghost', onclick: () => openAuthModal() },
+        {
+          type: 'button',
+          class: 'c-btn c-btn--ghost',
+          onclick: () => {
+            setRoute('account', 'hesabim');
+            render().catch(console.error);
+          },
+        },
         ['Giriş'],
       ),
     );
@@ -1202,7 +1325,11 @@ async function submitOrder() {
       );
     } else {
       const tok = getToken() || getRefreshToken();
-      if (!tok) return openAuthModal();
+      if (!tok) {
+        setRoute('account', 'hesabim');
+        render().catch(console.error);
+        return;
+      }
       const me = await api('/users/me');
       if (!customerProfileComplete(me)) {
         alert('Önce Hesap > Profilim bölümünden isim ve soyisim girin.');
@@ -1233,112 +1360,12 @@ async function submitOrder() {
   }
 }
 
-function openAuthModal() {
-  const back = el('div', { class: 'c-modal-back' });
-  const modal = el('div', { class: 'c-modal' });
-  let phone = '';
-
-  function close() {
-    back.remove();
-  }
-  back.addEventListener('click', (e) => {
-    if (e.target === back) close();
-  });
-
-  function viewPhone() {
-    modal.innerHTML = '';
-    const err = el('p', { class: 'c-error', id: 'auth-err' });
-    modal.append(
-      el('h2', { text: 'Giriş' }),
-      el('p', {
-        class: 'c-muted',
-        text: 'Türk cep: 5xx…, 05xx…, 90… veya +90… (boşluk/tire olabilir).',
-      }),
-      el('input', {
-        class: 'c-input',
-        placeholder: 'örn. 5551112233 veya 0555…',
-        id: 'ph',
-      }),
-      err,
-      el(
-        'button',
-        {
-          class: 'c-btn',
-          onclick: async () => {
-            phone = /** @type {HTMLInputElement} */ (modal.querySelector('#ph'))
-              .value.trim();
-            err.textContent = '';
-            try {
-              await api('/auth/otp/request', {
-                method: 'POST',
-                body: JSON.stringify({ phone }),
-              });
-              viewCode();
-            } catch (e) {
-              err.textContent = e.message;
-            }
-          },
-        },
-        ['Kod gönder'],
-      ),
-      el('button', { class: 'c-link', onclick: close }, ['Kapat']),
-    );
-  }
-
-  function viewCode() {
-    modal.innerHTML = '';
-    const err2 = el('p', { class: 'c-error', id: 'auth-err2' });
-    modal.append(
-      el('h2', { text: 'SMS kodu' }),
-      el('p', {
-        class: 'c-muted',
-        style: 'margin-bottom:8px',
-        text: 'Hesap telefon numaranızla oluşturulur. İsim ve soyisim, girişten sonra Hesap > Profilim’den zorunludur (web siparişi için).',
-      }),
-      el('input', {
-        class: 'c-input',
-        placeholder: '6 haneli kod',
-        id: 'cd',
-        maxlength: '6',
-      }),
-      err2,
-      el(
-        'button',
-        {
-          class: 'c-btn',
-          onclick: async () => {
-            const code = /** @type {HTMLInputElement} */ (
-              modal.querySelector('#cd')
-            ).value.trim();
-            err2.textContent = '';
-            try {
-              const { accessToken, refreshToken } = await api(
-                '/auth/otp/verify',
-                {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    phone,
-                    code,
-                  }),
-                },
-              );
-              setToken(accessToken, refreshToken);
-              close();
-              render();
-            } catch (e) {
-              err2.textContent = e.message;
-            }
-          },
-        },
-        ['Doğrula'],
-      ),
-      el('button', { class: 'c-link', onclick: viewPhone }, ['Telefonu değiştir']),
-    );
-  }
-
-  viewPhone();
-  back.append(modal);
-  document.body.append(back);
+/** @param {string} innerSvg path/circle elements only */
+function customerTopbarSvg(innerSvg) {
+  const template = document.createElement('template');
+  template.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${innerSvg}</svg>`;
+  const svg = template.content.firstElementChild;
+  return /** @type {SVGElement} */ (svg);
 }
 
 function renderTopbar(me) {
@@ -1358,6 +1385,37 @@ function renderTopbar(me) {
     }
     setRoute('cart');
   };
+  const goAccount = () => setRoute('account', 'hesabim');
+  const hasSession = !!(getToken() || getRefreshToken());
+  const nCart = cartCount();
+  const cartLabel = tableSlug
+    ? `Özet${nCart ? `, ${nCart} ürün` : ''}`
+    : `Sepet${nCart ? `, ${nCart} ürün` : ''}`;
+  const cartIcon = customerTopbarSvg(
+    '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>',
+  );
+  const profileIcon = customerTopbarSvg('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>');
+  const profileBtn = hasSession
+    ? el(
+        'button',
+        {
+          type: 'button',
+          class: 'c-btn c-btn--ghost c-btn--sm',
+          'aria-label': 'Hesap',
+          onclick: goAccount,
+        },
+        [profileIcon],
+      )
+    : el(
+        'button',
+        {
+          type: 'button',
+          class: 'c-btn c-btn--ghost c-btn--sm',
+          'aria-label': 'Giriş yap',
+          onclick: goAccount,
+        },
+        ['Giriş Yap'],
+      );
   const brandLogoStyle = `mask-image:url("${geyikBrandUrl}");-webkit-mask-image:url("${geyikBrandUrl}")`;
   return el('header', { class: 'c-topbar' }, [
     el(
@@ -1381,21 +1439,25 @@ function renderTopbar(me) {
         : el('span', { class: 'c-badge', text: 'Web' }),
       el(
         'button',
-        { class: 'c-btn c-btn--ghost c-btn--sm', onclick: goMenu },
-        ['Menü'],
+        { type: 'button', class: 'c-btn c-btn--ghost c-btn--sm', onclick: goMenu },
+        ['Ürünler'],
       ),
-      el(
-        'button',
-        { class: 'c-btn c-btn--ghost c-btn--sm', onclick: () => setRoute('account', 'hesabim') },
-        ['Hesap'],
-      ),
+      profileBtn,
       el(
         'button',
         {
-          class: 'c-btn c-btn--sm',
+          type: 'button',
+          class: 'c-btn c-btn--ghost c-btn--sm c-topbar-cartbtn',
+          'aria-label': cartLabel,
+          title: cartLabel,
           onclick: goCart,
         },
-        [tableSlug ? `Özet (${cartCount()})` : `Sepet (${cartCount()})`],
+        [
+          cartIcon,
+          nCart > 0
+            ? el('span', { class: 'c-topbar-badge', text: nCart > 99 ? '99+' : String(nCart) })
+            : null,
+        ],
       ),
     ]),
   ]);
@@ -1429,7 +1491,6 @@ function renderCartBar(me) {
 async function render() {
   const app = document.getElementById('app');
   if (!app) return;
-  app.innerHTML = '';
   let route = parseRoute();
   const tok = getToken() || getRefreshToken();
   /** @type {any | null} */
@@ -1483,6 +1544,9 @@ async function render() {
     });
   }
 
+  // Clear only after awaits: overlapping `render()` calls used to clear-then-yield;
+  // a second run could append without clearing again → duplicated shell (topbar + main + bar).
+  app.innerHTML = '';
   app.append(renderTopbar(meSnapshot));
   const main = el('main', { class: 'c-main' });
   if (route === 'menu' && menuCache) renderMenu(main);

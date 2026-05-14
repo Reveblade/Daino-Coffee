@@ -66,12 +66,12 @@
       <li><a href="#mission">Hikaye</a></li>
       <li><a href="/siparis">Menü</a></li>
     </ul>
-    <div class="nav-end">
+    <div class="nav-actions">
       <a href="/siparis" class="nav-cta">HEMEN SİPARİŞ VER</a>
+      <button class="nav-hamburger" type="button" aria-label="Menü" id="hamburger">
+        <span></span><span></span><span></span>
+      </button>
     </div>
-    <button class="nav-hamburger" type="button" aria-label="Menü" id="hamburger">
-      <span></span><span></span><span></span>
-    </button>
   </nav>
   <div class="nav-mobile-menu" id="mobileMenu">
     <a href="#top">Ana Sayfa</a>
@@ -79,7 +79,6 @@
     <a href="#ekipman">Ekipman</a>
     <a href="#mission">Hikaye</a>
     <a href="/siparis" class="nav-mobile-menu-link">Menü</a>
-    <a href="/siparis" class="nav-cta nav-cta-mobile">HEMEN SİPARİŞ VER</a>
   </div>
 
   <section class="hero" id="top">
@@ -146,58 +145,58 @@
     </header>
     <!-- Ürün fotoğrafları: yerel /public/coffee/ -->
     <div class="coffee-grid">
-      <div class="coffee-cell">
+      <a href="/kahve/espresso.html" class="coffee-cell coffee-cell-link">
         <span class="label">Espresso</span>
         <div class="coffee-photo-ring">
           <img src="/coffee/espresso.png" alt="Espresso" width="800" height="800" decoding="async" loading="lazy">
         </div>
-      </div>
-      <div class="coffee-cell">
+      </a>
+      <a href="/kahve/karamel-macchiato.html" class="coffee-cell coffee-cell-link">
         <span class="label">Karamel macchiato</span>
         <div class="coffee-photo-ring">
           <img src="/coffee/caramel-macchiato.png" alt="Karamel macchiato" width="800" height="800" decoding="async"
             loading="lazy">
         </div>
-      </div>
-      <div class="coffee-cell">
+      </a>
+      <a href="/kahve/cappuccino.html" class="coffee-cell coffee-cell-link">
         <span class="label">Cappuccino</span>
         <div class="coffee-photo-ring">
           <img src="/coffee/cappuccino.png" alt="Cappuccino" width="800" height="800" decoding="async" loading="lazy">
         </div>
-      </div>
-      <div class="coffee-cell">
+      </a>
+      <a href="/kahve/cold-brew.html" class="coffee-cell coffee-cell-link">
         <span class="label">Cold brew</span>
         <div class="coffee-photo-ring">
           <img src="/coffee/cold-brew.png" alt="Cold brew" width="800" height="800" decoding="async" loading="lazy">
         </div>
-      </div>
-      <div class="coffee-cell">
+      </a>
+      <a href="/kahve/buzlu-karamel-latte.html" class="coffee-cell coffee-cell-link">
         <span class="label">Buzlu karamel latte</span>
         <div class="coffee-photo-ring">
           <img src="/coffee/iced-caramel-latte.png" alt="Buzlu karamel latte" width="800" height="800" decoding="async"
             loading="lazy">
         </div>
-      </div>
-      <div class="coffee-cell">
+      </a>
+      <a href="/kahve/buzlu-mocha.html" class="coffee-cell coffee-cell-link">
         <span class="label">Buzlu mocha</span>
         <div class="coffee-photo-ring">
           <img src="/coffee/iced-mocha.png" alt="Buzlu mocha" width="800" height="800" decoding="async" loading="lazy">
         </div>
-      </div>
-      <div class="coffee-cell">
+      </a>
+      <a href="/kahve/buzlu-matcha-espresso.html" class="coffee-cell coffee-cell-link">
         <span class="label">Buzlu matcha &amp; espresso</span>
         <div class="coffee-photo-ring">
           <img src="/coffee/iced-matcha-espresso.png" alt="Buzlu matcha ve espresso içeceği" width="800" height="800"
             decoding="async" loading="lazy">
         </div>
-      </div>
-      <div class="coffee-cell">
+      </a>
+      <a href="/kahve/bogurtlen-hibiskus.html" class="coffee-cell coffee-cell-link">
         <span class="label">Böğürtlen–hibiskus içeceği</span>
         <div class="coffee-photo-ring">
           <img src="/coffee/iced-berry-hibiscus.png" alt="Buzlu böğürtlen ve hibiskus içeceği" width="800" height="800"
             decoding="async" loading="lazy">
         </div>
-      </div>
+      </a>
       <div class="coffee-cell coffee-cell-explore">
         <span class="label">Keşfet</span>
         <a href="/siparis" class="coffee-explore-tile" aria-label="Daha fazla kahve seçeneği için sipariş ver">
@@ -222,9 +221,56 @@
   </section>
 
   <section class="section-ekipman" id="ekipman" aria-labelledby="ekipman-heading">
-    <div class="section-ekipman-inner">
-      <h2 id="ekipman-heading" class="section-heading font-display">Ekipman</h2>
-      <p class="section-ekipman-text">Demleme ve servis ekipmanları için yakında buradayız.</p>
+    <div class="coffee-showcase-stack">
+      <header class="coffee-header">
+        <h2 id="ekipman-heading" class="section-heading font-display">Ekipman</h2>
+      </header>
+      <p class="section-ekipman-lead">Baristanın tezgâhında gördüğünüz profesyonel araçlar: espresso, öğütme, filtre
+        demleme ve süt hazırlığı için seçtiğimiz ekipman ailesi.</p>
+    </div>
+    <div class="coffee-grid" role="list">
+      <a href="/ekipman/espresso-makinesi.html" class="coffee-cell coffee-cell-link" role="listitem">
+        <span class="label">Espresso makinesi</span>
+        <div class="coffee-photo-ring">
+          <img src="https://images.unsplash.com/photo-1757495152311-10ed5abc0019?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Profesyonel espresso makinesi ve barista" width="800" height="800" decoding="async" loading="lazy">
+        </div>
+      </a>
+      <a href="/ekipman/kahve-ogutucusu.html" class="coffee-cell coffee-cell-link" role="listitem">
+        <span class="label">Kahve öğütücüsü</span>
+        <div class="coffee-photo-ring">
+          <img src="https://images.unsplash.com/photo-1573066380308-24ff4c273dbc?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Kahve öğütücüsü" width="800" height="800" decoding="async" loading="lazy">
+        </div>
+      </a>
+      <a href="/ekipman/filtre-demleme.html" class="coffee-cell coffee-cell-link" role="listitem">
+        <span class="label">Filtre demleme</span>
+        <div class="coffee-photo-ring">
+          <img src="https://images.unsplash.com/photo-1522825180917-a355ef45e880?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Filtre kahve demleme hazırlığı" width="800" height="800" decoding="async" loading="lazy">
+        </div>
+      </a>
+      <a href="/ekipman/ince-uclu-kettle.html" class="coffee-cell coffee-cell-link" role="listitem">
+        <span class="label">İnce uçlu kettle</span>
+        <div class="coffee-photo-ring">
+          <img src="https://images.unsplash.com/photo-1528402041550-b16e40dd8b81?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="İnce uçlu su kettle'ından döküm" width="800" height="800" decoding="async" loading="lazy">
+        </div>
+      </a>
+      <a href="/ekipman/sut-ve-pitcher.html" class="coffee-cell coffee-cell-link" role="listitem">
+        <span class="label">Süt &amp; pitcher</span>
+        <div class="coffee-photo-ring">
+          <img src="https://images.unsplash.com/photo-1684506450082-cd219e4e6af1?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Espresso fincanına süt dökülmesi" width="800" height="800" decoding="async" loading="lazy">
+        </div>
+      </a>
+      <a href="/ekipman/dijital-tarti.html" class="coffee-cell coffee-cell-link" role="listitem">
+        <span class="label">Dijital tartı</span>
+        <div class="coffee-photo-ring">
+          <img src="https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Mutfak terazisi ve tartı" width="800" height="800" decoding="async" loading="lazy">
+        </div>
+      </a>
     </div>
   </section>
 

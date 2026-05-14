@@ -91,6 +91,37 @@ body.customer-body {
   gap: 8px;
 }
 
+.c-topbar-cartbtn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.c-topbar-cartbtn svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.c-topbar-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  background: var(--cream);
+  color: var(--green-deep);
+  border: 2px solid rgba(27, 48, 34, 0.92);
+  box-sizing: border-box;
+}
+
 .c-badge {
   font-size: 0.75rem;
   padding: 2px 8px;
@@ -105,6 +136,21 @@ body.customer-body {
   max-width: 960px;
   margin: 0 auto;
   width: 100%;
+}
+
+.c-auth-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: min(72dvh, calc(100dvh - 120px));
+  padding: 8px 0 32px;
+}
+
+.c-auth-card {
+  width: 100%;
+  max-width: 420px;
 }
 
 .c-banner {
@@ -459,6 +505,12 @@ body.customer-body {
   padding: 20px;
   border: 1px solid rgba(245, 245, 220, 0.15);
   color: var(--cream);
+}
+
+.c-topbar .c-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .c-topbar .c-btn--ghost,
