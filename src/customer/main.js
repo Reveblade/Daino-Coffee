@@ -1,4 +1,5 @@
 import { api, formatTry, getRefreshToken, getToken, setToken } from './api.js';
+import { connectStoreRealtime } from './realtime.js';
 
 /** @type {{ categories: any[], products: any[] } | null} */
 let menuCache = null;
@@ -8,6 +9,8 @@ let shopCache = null;
 let tableMeta = null;
 /** @type {string | null} */
 let tableSlug = null;
+/** Slug for which `tableMeta` was last loaded (avoids refetch on every render). */
+let tableMetaSlug = null;
 /** @type {{ productId: string, name: string, unitPriceKurus: number, qty: number }[]} */
 let cart = [];
 /** QR menü: seçili kategori zinciri (köke göre id dizisi); boş = kök kategoriler. */
@@ -42,8 +45,12 @@ function parseRoute() {
 
   const masaPrefix = `${base}/masa/`;
   if (path.startsWith(masaPrefix)) {
-    const rest = path.slice(masaPrefix.length).split('/').filter(Boolean)[0];
-    if (rest) tableSlug = decodeURIComponent(rest);
+    const segs = path.slice(masaPrefix.length).split('/').filter(Boolean);
+    if (segs.length >= 2 && segs[1].toLowerCase() === 'ozet') {
+      tableSlug = decodeURIComponent(segs[0]);
+      return 'cart';
+    }
+    if (segs[0]) tableSlug = decodeURIComponent(segs[0]);
     return 'menu';
   }
 
@@ -56,6 +63,7 @@ function parseRoute() {
     const parts = h.split('/').filter(Boolean);
     if (parts[0] === 'masa' && parts[1]) {
       tableSlug = parts[1];
+      if (parts[2] === 'sepet' || parts[2] === 'ozet') return 'cart';
       return 'menu';
     }
     if (parts[0] === 'hesap') return 'account';
@@ -72,6 +80,7 @@ function parseRoute() {
   const hp = h.split('/').filter(Boolean);
   if (hp[0] === 'masa' && hp[1]) {
     tableSlug = hp[1];
+    if (hp[2] === 'sepet' || hp[2] === 'ozet') return 'cart';
     return 'menu';
   }
   if (hp[0] === 'hesap') return 'account';
@@ -95,7 +104,9 @@ function setRoute(route) {
   } else if (route === 'account') {
     nextPath = `${ORDER_APP_BASE}/hesap`;
   } else if (route === 'cart') {
-    nextPath = `${ORDER_APP_BASE}/sepet`;
+    nextPath = tableSlug
+      ? `${ORDER_APP_BASE}/masa/${encodeURIComponent(tableSlug)}/ozet`
+      : `${ORDER_APP_BASE}/sepet`;
   } else {
     const q = new URLSearchParams(window.location.search);
     const t = q.get('t');
@@ -118,7 +129,11 @@ function migrateLegacyCustomerUrl() {
 
   let target = ORDER_APP_BASE;
   if (parts[0] === 'masa' && parts[1]) {
-    target = `${ORDER_APP_BASE}/masa/${encodeURIComponent(parts[1])}`;
+    if (parts[2] === 'sepet' || parts[2] === 'ozet') {
+      target = `${ORDER_APP_BASE}/masa/${encodeURIComponent(parts[1])}/ozet`;
+    } else {
+      target = `${ORDER_APP_BASE}/masa/${encodeURIComponent(parts[1])}`;
+    }
   } else if (parts[0] === 'hesap') {
     target = `${ORDER_APP_BASE}/hesap`;
   } else if (parts[0] === 'sepet') {
@@ -356,7 +371,7 @@ function renderMenu(root) {
                     render();
                   },
                 },
-                ['Sepete'],
+                [isTable ? 'Ekle' : 'Sepete'],
               ),
             ]),
           ]),
@@ -536,9 +551,28 @@ function renderAccount(root) {
 }
 
 function renderCart(root) {
+  const isTable = !!tableSlug;
   if (!cart.length) {
-    root.append(el('p', { class: 'c-muted', text: 'Sepet boş.' }));
+    root.append(
+      el('p', {
+        class: 'c-muted',
+        text: isTable ? 'Henüz ürün seçmediniz.' : 'Sepet boş.',
+      }),
+    );
     return;
+  }
+  if (isTable) {
+    root.append(
+      el('h2', {
+        class: 'c-section-title',
+        text: 'Sipariş özeti',
+      }),
+      el('p', {
+        class: 'c-muted',
+        style: 'margin-bottom:12px',
+        text: 'Bu sayfa yalnızca dükkan içi masa siparişi içindir; web teslimatı ile karışmaz.',
+      }),
+    );
   }
   root.append(
     ...cart.map((c, idx) =>
@@ -565,7 +599,6 @@ function renderCart(root) {
   );
 
   const tok = getToken() || getRefreshToken();
-  const isTable = !!tableSlug;
   const noTable = tableMeta && tableMeta.found === false;
   const storefront = tableMeta?.isStorefront === true;
   const serviceOff = shopCache && !shopCache.acceptsOrders;
@@ -580,7 +613,7 @@ function renderCart(root) {
         'button',
         {
           class: 'c-btn',
-          disabled: !tok || (!canOrderTable && !canOrderOnline),
+          disabled: isTable ? !canOrderTable : !tok || !canOrderOnline,
           onclick: () => submitOrder(),
         },
         [isTable ? 'Masaya sipariş ver' : 'Online sipariş ver'],
@@ -588,7 +621,7 @@ function renderCart(root) {
     ]),
   );
 
-  if (!tok) {
+  if (!tok && !isTable) {
     root.append(
       el('p', { class: 'c-error', text: 'Sipariş için giriş yapın.' }),
       el(
@@ -613,19 +646,25 @@ function renderCart(root) {
 }
 
 async function submitOrder() {
-  const tok = getToken() || getRefreshToken();
-  if (!tok) return openAuthModal();
   const items = cart.map((c) => ({
     productId: c.productId,
     quantity: c.qty,
   }));
   try {
     if (tableSlug) {
-      await api('/orders/in-place', {
+      const res = await api('/orders/in-place', {
         method: 'POST',
         body: JSON.stringify({ tableSlug, items }),
       });
+      cart = [];
+      alert(
+        res?.augmented
+          ? 'Seçtikleriniz mevcut masanın siparişine eklendi.'
+          : 'Siparişiniz alındı.',
+      );
     } else {
+      const tok = getToken() || getRefreshToken();
+      if (!tok) return openAuthModal();
       const me = await api('/users/me');
       if (!me.addresses?.length) {
         alert('Önce hesabınızdan adres ekleyin.');
@@ -641,9 +680,9 @@ async function submitOrder() {
         method: 'POST',
         body: JSON.stringify({ items, addressIndex: ix }),
       });
+      cart = [];
+      alert('Siparişiniz alındı.');
     }
-    cart = [];
-    alert('Siparişiniz alındı.');
     render();
   } catch (e) {
     alert(e.message || 'Sipariş başarısız');
@@ -775,8 +814,11 @@ function renderTopbar() {
       ),
       el(
         'button',
-        { class: 'c-btn c-btn--sm', onclick: () => setRoute('cart') },
-        [`Sepet (${cartCount()})`],
+        {
+          class: 'c-btn c-btn--sm',
+          onclick: () => setRoute('cart'),
+        },
+        [tableSlug ? `Özet (${cartCount()})` : `Sepet (${cartCount()})`],
       ),
     ]),
   ]);
@@ -785,12 +827,13 @@ function renderTopbar() {
 function renderCartBar() {
   if (parseRoute() === 'cart') return null;
   if (!cart.length) return null;
+  const isTable = !!tableSlug;
   return el('div', { class: 'c-cart-bar' }, [
     el('span', { class: 'c-cart-total', text: formatTry(cartTotal()) }),
     el(
       'button',
       { class: 'c-btn c-btn--sm', onclick: () => setRoute('cart') },
-      ['Sepete git'],
+      [isTable ? 'Özete git' : 'Sepete git'],
     ),
   ]);
 }
@@ -800,9 +843,25 @@ async function render() {
   if (!app) return;
   app.innerHTML = '';
   const route = parseRoute();
-  await loadShop().catch(() => {});
-  if (route === 'menu') await loadTablePublic().catch(() => {});
-  if (!menuCache || route === 'menu') {
+
+  if (!tableSlug) {
+    tableMeta = null;
+    tableMetaSlug = null;
+  } else if (tableMetaSlug !== tableSlug) {
+    tableMeta = null;
+    tableMetaSlug = tableSlug;
+  }
+
+  if (!shopCache) {
+    await loadShop().catch(() => {});
+  }
+  if (route === 'menu' && tableSlug && !tableMeta) {
+    await loadTablePublic().catch(() => {});
+  }
+  if (route === 'cart' && tableSlug && !tableMeta) {
+    await loadTablePublic().catch(() => {});
+  }
+  if (!menuCache) {
     await loadMenu().catch((e) => {
       console.error(e);
     });
@@ -830,4 +889,11 @@ window.addEventListener('hashchange', () => {
 });
 
 migrateLegacyCustomerUrl();
+
+connectStoreRealtime((patch) => {
+  if (patch.menu) menuCache = null;
+  if (patch.shop) shopCache = null;
+  render().catch(console.error);
+});
+
 render().catch(console.error);

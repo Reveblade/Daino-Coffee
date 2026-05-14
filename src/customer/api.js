@@ -8,6 +8,22 @@ export function getApiBase() {
   return raw.replace(/\/$/, '');
 }
 
+/** Native WS URL for store push (same host as API, path `/ws/store`). */
+export function getStoreWsUrl() {
+  const explicit = import.meta.env.VITE_WS_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, '');
+  const base = getApiBase();
+  try {
+    const httpUrl = new URL(
+      /^https?:\/\//i.test(base) ? base : `http://${base}`,
+    );
+    const wsProto = httpUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${wsProto}//${httpUrl.host}/ws/store`;
+  } catch {
+    return 'ws://localhost:3000/ws/store';
+  }
+}
+
 /**
  * @param {string} url
  * @param {RequestInit} opts
