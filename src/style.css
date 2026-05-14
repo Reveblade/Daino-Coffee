@@ -264,6 +264,7 @@
       background: none;
       cursor: pointer;
       padding: 0;
+      text-decoration: none;
       font-family: 'DM Sans', sans-serif;
       font-size: 0.72rem;
       font-weight: 600;
@@ -271,6 +272,10 @@
       text-transform: uppercase;
       color: rgba(255, 255, 255, 0.88);
       transition: color 0.2s;
+    }
+    .nav-menu-text:link,
+    .nav-menu-text:visited {
+      color: rgba(255, 255, 255, 0.88);
     }
     .nav-menu-text:hover {
       color: var(--gold);
@@ -336,15 +341,13 @@
       border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     }
     .nav-mobile-menu .nav-mobile-menu-link {
-      appearance: none;
       display: block;
       width: 100%;
       margin: 0;
       text-align: left;
       font-family: inherit;
       cursor: pointer;
-      background: transparent;
-      border: none;
+      box-sizing: border-box;
       border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     }
     .nav-mobile-menu .nav-cta-mobile {
@@ -654,6 +657,35 @@
       .post-hero-tagline-right {
         align-self: auto;
       }
+    }
+
+    /* ─── SECTION: EKİPMAN (anchor for nav) ─── */
+    .section-ekipman {
+      position: relative;
+      z-index: 10;
+      background: var(--cream);
+      color: var(--green);
+      padding: clamp(28px, 5vw, 56px) clamp(20px, 4vw, 48px);
+    }
+    .section-ekipman-inner {
+      max-width: 720px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    .section-ekipman .section-heading {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(2.2rem, 7vw, 4rem);
+      letter-spacing: 0.06em;
+      color: var(--green);
+      margin: 0;
+      text-transform: uppercase;
+    }
+    .section-ekipman-text {
+      margin: clamp(12px, 2vw, 20px) auto 0;
+      max-width: 520px;
+      font-size: 0.9rem;
+      line-height: 1.65;
+      color: rgba(27, 48, 34, 0.72);
     }
 
     /* ─── SECTION: OUR COFFEE ─── */

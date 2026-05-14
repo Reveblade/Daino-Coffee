@@ -1,5 +1,6 @@
 import { api, formatTry, getRefreshToken, getToken, setToken } from './api.js';
 import { connectStoreRealtime } from './realtime.js';
+import geyikBrandUrl from '../../assets/geyik.svg?url';
 
 /** @type {{ categories: any[], products: any[] } | null} */
 let menuCache = null;
@@ -11,7 +12,7 @@ let tableMeta = null;
 let tableSlug = null;
 /** Slug for which `tableMeta` was last loaded (avoids refetch on every render). */
 let tableMetaSlug = null;
-/** @type {{ productId: string, name: string, unitPriceKurus: number, qty: number }[]} */
+/** @type {{ productId: string, name: string, unitPriceKurus: number, qty: number, optionsPayload?: { groupId: string, selectedChoiceIds: string[] }[], optionsSummary?: string }[]} */
 let cart = [];
 /** QR menü: seçili kategori zinciri (köke göre id dizisi); boş = kök kategoriler. */
 let menuBrowseStack = [];
@@ -19,17 +20,63 @@ let menuBrowseStack = [];
 /** Public URL prefix for the ordering app (nginx + Vite dev rewrite). */
 const ORDER_APP_BASE = '/siparis';
 
+/** `/siparis/hesap` alt sekmesi */
+let accountTab = 'hesabim';
+
+const ACCOUNT_TABS = new Set(['hesabim', 'profilim', 'adreslerim', 'siparislerim']);
+
+/** @param {string} tab */
+function accountPath(tab) {
+  if (tab === 'hesabim') return `${ORDER_APP_BASE}/hesap`;
+  return `${ORDER_APP_BASE}/hesap/${tab}`;
+}
+
+/** @param {string} role */
+function roleLabelTr(role) {
+  const m = {
+    CUSTOMER: 'Müşteri',
+    CASHIER: 'Kasiyer',
+    COURIER: 'Kurye',
+    ADMIN: 'Yönetici',
+    ADMIN_OWNER: 'İşletme sahibi',
+  };
+  return m[role] ?? role;
+}
+
+/** @param {any | null | undefined} me */
+function customerProfileComplete(me) {
+  if (!me || me.role !== 'CUSTOMER') return true;
+  if (typeof me.profileComplete === 'boolean') return me.profileComplete;
+  const fn = (me.firstName && String(me.firstName).trim()) || '';
+  const ln = (me.lastName && String(me.lastName).trim()) || '';
+  return fn.length >= 2 && ln.length >= 2;
+}
+
+/** @param {any | null | undefined} me */
+function webCustomerProfileLocked(me) {
+  return !!me && !tableSlug && me.role === 'CUSTOMER' && !customerProfileComplete(me);
+}
+
+/** @param {{ status: string }} o */
+function onlineOrderStatusTr(o) {
+  const m = {
+    PLACED: 'Alındı',
+    CONFIRMED: 'Onaylandı',
+    IN_PROGRESS: 'Hazırlanıyor',
+    READY_FOR_HANDOFF: 'Teslime hazır',
+    ASSIGNED: 'Kurye atandı',
+    OUT_FOR_DELIVERY: 'Yolda',
+    DELIVERED: 'Teslim edildi',
+    AWAITING_CASHIER_PAYMENT: 'Ödeme bekleniyor',
+    PAID: 'Ödendi',
+    CANCELLED: 'İptal',
+  };
+  return m[o.status] ?? o.status;
+}
+
 function normalizePathname() {
   const p = window.location.pathname.replace(/\/+$/, '');
   return p === '' ? '/' : p;
-}
-
-function menuHomeHref() {
-  if (tableSlug) return `${ORDER_APP_BASE}/masa/${encodeURIComponent(tableSlug)}`;
-  const q = new URLSearchParams(window.location.search);
-  const t = q.get('t');
-  if (t) return `${ORDER_APP_BASE}?${new URLSearchParams({ t }).toString()}`;
-  return ORDER_APP_BASE;
 }
 
 function parseRoute() {
@@ -54,7 +101,16 @@ function parseRoute() {
     return 'menu';
   }
 
-  if (path === `${base}/hesap`) return 'account';
+  if (path === `${base}/hesap`) {
+    accountTab = 'hesabim';
+    return 'account';
+  }
+  const accPrefix = `${base}/hesap/`;
+  if (path.startsWith(accPrefix)) {
+    const rest = path.slice(accPrefix.length).split('/').filter(Boolean)[0];
+    accountTab = ACCOUNT_TABS.has(rest) ? rest : 'hesabim';
+    return 'account';
+  }
   if (path === `${base}/sepet`) return 'cart';
 
   // Legacy: built customer.html entry + hash routes
@@ -66,7 +122,10 @@ function parseRoute() {
       if (parts[2] === 'sepet' || parts[2] === 'ozet') return 'cart';
       return 'menu';
     }
-    if (parts[0] === 'hesap') return 'account';
+    if (parts[0] === 'hesap') {
+      accountTab = ACCOUNT_TABS.has(parts[1]) ? parts[1] : 'hesabim';
+      return 'account';
+    }
     if (parts[0] === 'sepet') return 'cart';
     const q = new URLSearchParams(window.location.search);
     if (q.get('t')) {
@@ -83,7 +142,10 @@ function parseRoute() {
     if (hp[2] === 'sepet' || hp[2] === 'ozet') return 'cart';
     return 'menu';
   }
-  if (hp[0] === 'hesap') return 'account';
+  if (hp[0] === 'hesap') {
+    accountTab = ACCOUNT_TABS.has(hp[1]) ? hp[1] : 'hesabim';
+    return 'account';
+  }
   if (hp[0] === 'sepet') return 'cart';
 
   const q = new URLSearchParams(window.location.search);
@@ -94,15 +156,18 @@ function parseRoute() {
   return 'menu';
 }
 
-function setRoute(route) {
+function setRoute(route, tab) {
   if (route === 'menu') {
     menuBrowseStack = [];
+  }
+  if (route === 'account' && tab && ACCOUNT_TABS.has(tab)) {
+    accountTab = tab;
   }
   let nextPath;
   if (route === 'menu' && tableSlug) {
     nextPath = `${ORDER_APP_BASE}/masa/${encodeURIComponent(tableSlug)}`;
   } else if (route === 'account') {
-    nextPath = `${ORDER_APP_BASE}/hesap`;
+    nextPath = accountPath(accountTab);
   } else if (route === 'cart') {
     nextPath = tableSlug
       ? `${ORDER_APP_BASE}/masa/${encodeURIComponent(tableSlug)}/ozet`
@@ -135,7 +200,8 @@ function migrateLegacyCustomerUrl() {
       target = `${ORDER_APP_BASE}/masa/${encodeURIComponent(parts[1])}`;
     }
   } else if (parts[0] === 'hesap') {
-    target = `${ORDER_APP_BASE}/hesap`;
+    const tab = ACCOUNT_TABS.has(parts[1]) ? parts[1] : 'hesabim';
+    target = accountPath(tab);
   } else if (parts[0] === 'sepet') {
     target = `${ORDER_APP_BASE}/sepet`;
   } else if (t) {
@@ -217,16 +283,216 @@ function cartTotal() {
   return cart.reduce((s, i) => s + i.unitPriceKurus * i.qty, 0);
 }
 
-function addToCart(p) {
-  const ex = cart.find((c) => c.productId === String(p._id));
-  if (ex) ex.qty += 1;
-  else
-    cart.push({
+/** @param {any} line */
+function cartLineKey(line) {
+  const o = line.optionsPayload ?? [];
+  return `${line.productId}__${JSON.stringify(o)}`;
+}
+
+function cartLineOptionExtrasKurus(groups, payload) {
+  if (!payload?.length) return 0;
+  const gmap = new Map(groups.map((g) => [g.id, g]));
+  let sum = 0;
+  for (const e of payload) {
+    const g = gmap.get(e.groupId);
+    if (!g) continue;
+    for (const id of e.selectedChoiceIds ?? []) {
+      const ch = g.choices?.find((c) => c.id === id);
+      if (ch) sum += Number(ch.extraPriceKurus) || 0;
+    }
+  }
+  return sum;
+}
+
+/** @param {any} ch */
+function choiceLabelWithExtra(ch) {
+  const lab = ch?.label ?? '';
+  const ex = Number(ch?.extraPriceKurus) || 0;
+  if (ex <= 0) return lab;
+  return `${lab} (+${formatTry(ex)})`;
+}
+
+/**
+ * @param {any[]} groups
+ * @param {{ groupId: string, selectedChoiceIds: string[] }[]} payload
+ */
+function summarizeOptionsFromProduct(groups, payload) {
+  if (!groups?.length || !payload?.length) return '';
+  const gmap = new Map(groups.map((g) => [g.id, g]));
+  const parts = [];
+  for (const e of payload) {
+    const g = gmap.get(e.groupId);
+    if (!g) continue;
+    const ids = e.selectedChoiceIds ?? [];
+    const labels = ids
+      .map((id) => {
+        const ch = g.choices?.find((c) => c.id === id);
+        return ch ? choiceLabelWithExtra(ch) : '';
+      })
+      .filter(Boolean);
+    if (labels.length) parts.push(`${g.label}: ${labels.join(', ')}`);
+  }
+  return parts.join(' · ');
+}
+
+/**
+ * @param {any} it
+ */
+function customerOrderItemLine(it) {
+  let s = `${it.name} ×${it.quantity}`;
+  if (!it?.optionSelections?.length) return s;
+  const ox = it.optionSelections
+    .map((g) => {
+      const labs = (g.selectedChoices || [])
+        .map((c) => {
+          const ex = Number(c.extraPriceKurus) || 0;
+          const base = c.label || '';
+          if (ex <= 0) return base;
+          return `${base} (+${formatTry(ex)})`;
+        })
+        .filter(Boolean)
+        .join(', ');
+      return labs ? `${g.groupLabel || g.groupId}: ${labs}` : '';
+    })
+    .filter(Boolean)
+    .join(' · ');
+  return ox ? `${s} (${ox})` : s;
+}
+
+/**
+ * @param {any} product
+ * @param {(line: object) => void} onPick
+ */
+function openProductOptionsModal(product, onPick) {
+  const groups = product.optionGroups ?? [];
+  const overlay = el('div', { class: 'c-modal-back' });
+  const modal = el('div', { class: 'c-modal c-opt-modal' });
+
+  for (const g of groups) {
+    const gid = g.id;
+    if (g.kind === 'SELECTABLE') {
+      modal.append(
+        el('fieldset', { class: 'c-opt-fieldset' }, [
+          el('legend', { class: 'c-opt-legend', text: g.label }),
+          ...(g.choices ?? []).map((ch) =>
+            el('label', { class: 'c-opt-row' }, [
+              el('input', {
+                type: 'checkbox',
+                name: `og-${gid}`,
+                value: ch.id,
+              }),
+              ` ${choiceLabelWithExtra(ch)}`,
+            ]),
+          ),
+        ]),
+      );
+    } else {
+      modal.append(
+        el('fieldset', { class: 'c-opt-fieldset' }, [
+          el('legend', { class: 'c-opt-legend', text: g.label }),
+          el(
+            'select',
+            {
+              class: 'c-input c-opt-select',
+              name: `og-${gid}`,
+            },
+            [
+              el('option', { value: '', text: '— İsteğe bağlı —' }),
+              ...(g.choices ?? []).map((ch) =>
+                el('option', { value: ch.id, text: choiceLabelWithExtra(ch) }),
+              ),
+            ],
+          ),
+        ]),
+      );
+    }
+  }
+
+  modal.append(
+    el('div', { class: 'c-opt-actions' }, [
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'c-btn c-btn--ghost',
+          onclick: () => overlay.remove(),
+        },
+        ['İptal'],
+      ),
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'c-btn',
+          onclick: () => {
+            /** @type {{ groupId: string, selectedChoiceIds: string[] }[]} */
+            const payload = [];
+            for (const g of groups) {
+              if (g.kind === 'SELECTABLE') {
+                const checked = modal.querySelectorAll(
+                  `input[name="og-${g.id}"]:checked`,
+                );
+                const ids = [...checked].map(
+                  (n) => /** @type {HTMLInputElement} */ (n).value,
+                );
+                if (ids.length)
+                  payload.push({ groupId: g.id, selectedChoiceIds: ids });
+              } else {
+                const sel = modal.querySelector(`select[name="og-${g.id}"]`);
+                const v = sel?.value?.trim?.() ?? '';
+                if (v) payload.push({ groupId: g.id, selectedChoiceIds: [v] });
+              }
+            }
+            const summary = summarizeOptionsFromProduct(groups, payload);
+            const extras = cartLineOptionExtrasKurus(groups, payload);
+            onPick({
+              productId: String(product._id),
+              name: product.name,
+              unitPriceKurus: product.priceKurus + extras,
+              qty: 1,
+              optionsPayload: payload,
+              optionsSummary: summary,
+            });
+            overlay.remove();
+            render().catch(console.error);
+          },
+        },
+        ['Sepete ekle'],
+      ),
+    ]),
+  );
+
+  overlay.append(
+    el('div', { class: 'c-modal-wrap' }, [
+      el('h2', { class: 'c-modal-title', text: product.name }),
+      modal,
+    ]),
+  );
+  document.body.append(overlay);
+}
+
+function mergeCartLine(line) {
+  const k = cartLineKey(line);
+  const ex = cart.find((c) => cartLineKey(c) === k);
+  if (ex) ex.qty += line.qty;
+  else cart.push(line);
+}
+
+function addProductChoiceToCart(p) {
+  const groups = p.optionGroups ?? [];
+  if (!groups.length) {
+    mergeCartLine({
       productId: String(p._id),
       name: p.name,
       unitPriceKurus: p.priceKurus,
       qty: 1,
+      optionsPayload: [],
+      optionsSummary: '',
     });
+    render().catch(console.error);
+    return;
+  }
+  openProductOptionsModal(p, mergeCartLine);
 }
 
 function buildCategoryTree(categories) {
@@ -367,7 +633,7 @@ function renderMenu(root) {
                   disabled: blockOrders,
                   onclick: () => {
                     if (blockOrders) return;
-                    addToCart(p);
+                    addProductChoiceToCart(p);
                     render();
                   },
                 },
@@ -459,7 +725,308 @@ function renderMenu(root) {
   root.append(browse);
 }
 
-function renderAccount(root) {
+function renderAccountNav(me) {
+  const tabs = [
+    { id: 'hesabim', label: 'Hesabım' },
+    { id: 'profilim', label: 'Profilim' },
+    { id: 'adreslerim', label: 'Adreslerim' },
+    { id: 'siparislerim', label: 'Siparişlerim' },
+  ];
+  const locked = webCustomerProfileLocked(me);
+  const shown = locked ? tabs.filter((t) => t.id === 'hesabim' || t.id === 'profilim') : tabs;
+  return el(
+    'nav',
+    { class: 'c-account-nav', 'aria-label': 'Hesap bölümleri' },
+    shown.map((t) =>
+      el(
+        'button',
+        {
+          type: 'button',
+          class:
+            accountTab === t.id
+              ? 'c-account-tab c-account-tab--active'
+              : 'c-account-tab',
+          onclick: () => setRoute('account', t.id),
+        },
+        [t.label],
+      ),
+    ),
+  );
+}
+
+/**
+ * @param {HTMLElement} panel
+ * @param {any} me
+ */
+function renderAccountHesabim(panel, me) {
+  const fullName = [me.firstName, me.lastName].filter(Boolean).join(' ').trim();
+  panel.append(
+    el('p', {
+      class: 'c-account-greeting',
+      text: fullName ? `Merhaba, ${fullName}` : 'Merhaba',
+    }),
+    el('p', {
+      class: 'c-muted',
+      text: `${me.phoneE164} · ${roleLabelTr(me.role)}`,
+    }),
+    el('p', {
+      class: 'c-muted',
+      style: 'margin-top:12px;line-height:1.5',
+      text: 'Teslimat adresleri ve web siparişleriniz için sol menüden ilgili sekmeyi açabilirsiniz.',
+    }),
+    el(
+      'button',
+      {
+        class: 'c-btn c-btn--ghost',
+        style: 'margin-top:16px;align-self:flex-start',
+        onclick: () => {
+          setToken(null);
+          render();
+        },
+      },
+      ['Çıkış yap'],
+    ),
+  );
+}
+
+/**
+ * @param {HTMLElement} panel
+ * @param {any} me
+ */
+function renderAccountProfilim(panel, me) {
+  const err = el('p', { class: 'c-error', id: 'profil-err' });
+  const fn = el('input', {
+    class: 'c-input',
+    id: 'profil-fn',
+    placeholder: 'İsim',
+    value: me.firstName ?? '',
+  });
+  const ln = el('input', {
+    class: 'c-input',
+    id: 'profil-ln',
+    placeholder: 'Soyisim',
+    value: me.lastName ?? '',
+  });
+  const lead =
+    me.role === 'CUSTOMER' && !customerProfileComplete(me)
+      ? el('p', {
+          class: 'c-error',
+          style: 'margin-bottom:14px;line-height:1.45',
+          text: 'Web siparişi ve kayıtlı adres eklemek için isim ve soyisim zorunludur (en az 2 karakter). Kaydettikten sonra diğer hesap sekmeleri açılır.',
+        })
+      : el('p', {
+          class: 'c-muted',
+          style: 'margin-bottom:12px',
+          text: 'Telefon numaranız giriş için kullanılır; burada ad ve soyadınızı güncelleyebilirsiniz.',
+        });
+  panel.append(
+    lead,
+    el('label', { class: 'c-label', text: 'İsim' }),
+    fn,
+    el('label', { class: 'c-label', text: 'Soyisim' }),
+    ln,
+    err,
+    el(
+      'button',
+      {
+        class: 'c-btn',
+        onclick: async () => {
+          err.textContent = '';
+          const firstName = /** @type {HTMLInputElement} */ (fn).value.trim();
+          const lastName = /** @type {HTMLInputElement} */ (ln).value.trim();
+          if (firstName.length < 2 || lastName.length < 2) {
+            err.textContent = 'İsim ve soyisim en az 2 karakter olmalı.';
+            return;
+          }
+          try {
+            await api('/users/me', {
+              method: 'PATCH',
+              body: JSON.stringify({ firstName, lastName }),
+            });
+            setRoute('account', 'profilim');
+            render();
+          } catch (e) {
+            err.textContent = e.message || 'Kaydedilemedi';
+          }
+        },
+      },
+      ['Kaydet'],
+    ),
+  );
+}
+
+/**
+ * @param {HTMLElement} panel
+ * @param {any} me
+ */
+function renderAccountAdreslerim(panel, me) {
+  if (me.role !== 'CUSTOMER') {
+    panel.append(
+      el('p', {
+        class: 'c-muted',
+        text: 'Kayıtlı adresler yalnızca müşteri hesapları içindir.',
+      }),
+    );
+    return;
+  }
+  panel.append(el('h3', { class: 'c-cat-name', text: 'Kayıtlı adresler' }));
+  if (me.addresses?.length) {
+    me.addresses.forEach((a, idx) => {
+      panel.append(
+        el('div', { class: 'c-address-row' }, [
+          el('div', { class: 'c-address-row-text' }, [
+            `${a.label}: ${a.line1}${a.district ? `, ${a.district}` : ''} — ${a.city}`,
+          ]),
+          el(
+            'button',
+            {
+              type: 'button',
+              class: 'c-btn c-btn--ghost c-btn--sm',
+              onclick: async () => {
+                if (!confirm('Bu adres silinsin mi?')) return;
+                try {
+                  await api(`/users/addresses/${idx}`, { method: 'DELETE' });
+                  render();
+                } catch (e) {
+                  alert(e.message || 'Silinemedi');
+                }
+              },
+            },
+            ['Sil'],
+          ),
+        ]),
+      );
+    });
+  } else {
+    panel.append(el('p', { class: 'c-muted', text: 'Kayıtlı adres yok.' }));
+  }
+  panel.append(
+    el('h3', {
+      class: 'c-cat-name',
+      style: 'margin-top:20px',
+      text: 'Yeni adres',
+    }),
+  );
+  const label = el('input', {
+    class: 'c-input',
+    placeholder: 'Etiket (örn. Ev)',
+  });
+  const line1 = el('input', {
+    class: 'c-input',
+    placeholder: 'Adres satırı',
+  });
+  const district = el('input', { class: 'c-input', placeholder: 'İlçe' });
+  const city = el('input', { class: 'c-input', placeholder: 'Şehir' });
+  panel.append(label, line1, district, city);
+  panel.append(
+    el(
+      'button',
+      {
+        class: 'c-btn',
+        onclick: async () => {
+          try {
+            await api('/users/addresses', {
+              method: 'POST',
+              body: JSON.stringify({
+                label: label.value,
+                line1: line1.value,
+                district: district.value,
+                city: city.value,
+              }),
+            });
+            setRoute('account', 'adreslerim');
+            render();
+          } catch (e) {
+            alert(e.message || 'Adres eklenemedi');
+          }
+        },
+      },
+      ['Adres kaydet'],
+    ),
+  );
+}
+
+/**
+ * @param {HTMLElement} panel
+ * @param {any} me
+ */
+function renderAccountSiparislerim(panel, me) {
+  if (me.role !== 'CUSTOMER') {
+    panel.append(
+      el('p', {
+        class: 'c-muted',
+        text: 'Web sipariş geçmişi yalnızca müşteri hesabıyla görüntülenebilir.',
+      }),
+    );
+    return;
+  }
+  const loading = el('p', { class: 'c-muted', text: 'Siparişler yükleniyor…' });
+  panel.append(loading);
+  Promise.all([api('/orders'), api('/orders/history?page=0&pageSize=20')])
+    .then(([active, hist]) => {
+      panel.innerHTML = '';
+      const act = Array.isArray(active) ? active : [];
+      const items = hist?.items ?? [];
+      panel.append(el('h3', { class: 'c-cat-name', text: 'Devam eden siparişler' }));
+      if (!act.length) {
+        panel.append(el('p', { class: 'c-muted', text: 'Aktif web siparişiniz yok.' }));
+      } else {
+        act.forEach((o) => {
+          const lines = (o.items || []).map((it) => customerOrderItemLine(it)).join(', ');
+          panel.append(
+            el('div', { class: 'c-order-card' }, [
+              el('div', { class: 'c-order-card-head' }, [
+                el('span', { class: 'c-order-id', text: `#${String(o._id).slice(-6)}` }),
+                el('span', { class: 'c-order-status', text: onlineOrderStatusTr(o) }),
+              ]),
+              el('p', { class: 'c-muted', style: 'margin:6px 0', text: lines }),
+              el('p', {
+                class: 'c-price',
+                text: formatTry(o.totalKurus ?? 0),
+              }),
+            ]),
+          );
+        });
+      }
+      panel.append(
+        el('h3', {
+          class: 'c-cat-name',
+          style: 'margin-top:22px',
+          text: 'Geçmiş siparişler',
+        }),
+      );
+      if (!items.length) {
+        panel.append(el('p', { class: 'c-muted', text: 'Henüz tamamlanan sipariş yok.' }));
+      } else {
+        items.forEach((o) => {
+          const lines = (o.items || []).map((it) => customerOrderItemLine(it)).join(', ');
+          panel.append(
+            el('div', { class: 'c-order-card' }, [
+              el('div', { class: 'c-order-card-head' }, [
+                el('span', { class: 'c-order-id', text: `#${String(o._id).slice(-6)}` }),
+                el('span', { class: 'c-order-status', text: onlineOrderStatusTr(o) }),
+              ]),
+              el('p', { class: 'c-muted', style: 'margin:6px 0', text: lines }),
+              el('p', {
+                class: 'c-price',
+                text: formatTry(o.totalKurus ?? 0),
+              }),
+            ]),
+          );
+        });
+      }
+    })
+    .catch(() => {
+      panel.innerHTML = '';
+      panel.append(el('p', { class: 'c-error', text: 'Siparişler yüklenemedi.' }));
+    });
+}
+
+/**
+ * @param {HTMLElement} root
+ * @param {any | null | undefined} precookedMe already fetched in `render()` (optional)
+ */
+function renderAccount(root, precookedMe) {
   const tok = getToken() || getRefreshToken();
   if (!tok) {
     root.append(
@@ -472,85 +1039,37 @@ function renderAccount(root) {
     );
     return;
   }
-  api('/users/me')
-    .then((me) => {
-      root.innerHTML = '';
-      const wrap = el('div', { class: 'c-stack' });
-      wrap.append(
-        el('p', { class: 'c-muted', text: `${me.phoneE164} · ${me.role}` }),
-        el('h3', { class: 'c-cat-name', text: 'Adreslerim' }),
-      );
-      if (me.addresses?.length) {
-        me.addresses.forEach((a) => {
-          wrap.append(
-            el('div', { class: 'c-address-item' }, [
-              `${a.label}: ${a.line1}${a.district ? `, ${a.district}` : ''} — ${a.city}`,
-            ]),
-          );
-        });
-      } else {
-        wrap.append(el('p', { class: 'c-muted', text: 'Kayıtlı adres yok.' }));
-      }
-      wrap.append(
-        el('h3', {
-          class: 'c-cat-name',
-          style: 'margin-top:16px',
-          text: 'Yeni adres',
-        }),
-      );
-      const label = el('input', {
-        class: 'c-input',
-        placeholder: 'Etiket (örn. Ev)',
+  const apply = (me) => {
+    root.innerHTML = '';
+    const shell = el('div', { class: 'c-account-shell c-stack' });
+    shell.append(
+      el('h2', {
+        class: 'c-section-title',
+        style: 'margin-bottom:4px',
+        text: 'Hesabınız',
+      }),
+    );
+    shell.append(renderAccountNav(me));
+    const panel = el('div', { class: 'c-account-panel' });
+    shell.append(panel);
+    root.append(shell);
+    if (accountTab === 'hesabim') renderAccountHesabim(panel, me);
+    else if (accountTab === 'profilim') renderAccountProfilim(panel, me);
+    else if (accountTab === 'adreslerim') renderAccountAdreslerim(panel, me);
+    else renderAccountSiparislerim(panel, me);
+  };
+  if (precookedMe) {
+    apply(precookedMe);
+  } else {
+    api('/users/me')
+      .then(apply)
+      .catch(() => {
+        root.append(el('p', { class: 'c-error', text: 'Profil yüklenemedi.' }));
       });
-      const line1 = el('input', {
-        class: 'c-input',
-        placeholder: 'Adres satırı',
-      });
-      const district = el('input', { class: 'c-input', placeholder: 'İlçe' });
-      const city = el('input', { class: 'c-input', placeholder: 'Şehir' });
-      wrap.append(label, line1, district, city);
-      wrap.append(
-        el(
-          'button',
-          {
-            class: 'c-btn',
-            onclick: async () => {
-              await api('/users/addresses', {
-                method: 'POST',
-                body: JSON.stringify({
-                  label: label.value,
-                  line1: line1.value,
-                  district: district.value,
-                  city: city.value,
-                }),
-              });
-              setRoute('account');
-              render();
-            },
-          },
-          ['Adres kaydet'],
-        ),
-        el(
-          'button',
-          {
-            class: 'c-btn c-btn--ghost',
-            style: 'margin-top:12px',
-            onclick: () => {
-              setToken(null);
-              render();
-            },
-          },
-          ['Çıkış'],
-        ),
-      );
-      root.append(wrap);
-    })
-    .catch(() => {
-      root.append(el('p', { class: 'c-error', text: 'Profil yüklenemedi.' }));
-    });
+  }
 }
 
-function renderCart(root) {
+function renderCart(root, me) {
   const isTable = !!tableSlug;
   if (!cart.length) {
     root.append(
@@ -579,6 +1098,9 @@ function renderCart(root) {
       el('div', { class: 'c-card' }, [
         el('div', { class: 'c-card-body' }, [
           el('p', { class: 'c-card-title', text: c.name }),
+          c.optionsSummary
+            ? el('p', { class: 'c-muted c-card-opts', text: c.optionsSummary })
+            : null,
           el('div', { class: 'c-row' }, [
             el('span', { text: `${c.qty} × ${formatTry(c.unitPriceKurus)}` }),
             el(
@@ -605,6 +1127,11 @@ function renderCart(root) {
   const canOrderTable =
     isTable && !noTable && !storefront && !serviceOff && tableMeta?.found;
   const canOrderOnline = !isTable;
+  const webProfileBlock =
+    !isTable &&
+    !!tok &&
+    me?.role === 'CUSTOMER' &&
+    !customerProfileComplete(me);
 
   root.append(
     el('div', { class: 'c-row', style: 'margin-top:16px' }, [
@@ -613,7 +1140,7 @@ function renderCart(root) {
         'button',
         {
           class: 'c-btn',
-          disabled: isTable ? !canOrderTable : !tok || !canOrderOnline,
+          disabled: isTable ? !canOrderTable : !tok || !canOrderOnline || webProfileBlock,
           onclick: () => submitOrder(),
         },
         [isTable ? 'Masaya sipariş ver' : 'Online sipariş ver'],
@@ -629,6 +1156,16 @@ function renderCart(root) {
         { class: 'c-btn c-btn--ghost', onclick: () => openAuthModal() },
         ['Giriş'],
       ),
+    );
+  }
+
+  if (!isTable && webProfileBlock) {
+    root.append(
+      el('p', {
+        class: 'c-muted',
+        style: 'margin-top:10px',
+        text: 'Web siparişi için önce Hesap > Profilim’den isim ve soyisim girin.',
+      }),
     );
   }
 
@@ -649,6 +1186,7 @@ async function submitOrder() {
   const items = cart.map((c) => ({
     productId: c.productId,
     quantity: c.qty,
+    ...(c.optionsPayload?.length ? { options: c.optionsPayload } : {}),
   }));
   try {
     if (tableSlug) {
@@ -666,9 +1204,15 @@ async function submitOrder() {
       const tok = getToken() || getRefreshToken();
       if (!tok) return openAuthModal();
       const me = await api('/users/me');
+      if (!customerProfileComplete(me)) {
+        alert('Önce Hesap > Profilim bölümünden isim ve soyisim girin.');
+        setRoute('account', 'profilim');
+        render();
+        return;
+      }
       if (!me.addresses?.length) {
         alert('Önce hesabınızdan adres ekleyin.');
-        setRoute('account');
+        setRoute('account', 'adreslerim');
         render();
         return;
       }
@@ -746,6 +1290,11 @@ function openAuthModal() {
     const err2 = el('p', { class: 'c-error', id: 'auth-err2' });
     modal.append(
       el('h2', { text: 'SMS kodu' }),
+      el('p', {
+        class: 'c-muted',
+        style: 'margin-bottom:8px',
+        text: 'Hesap telefon numaranızla oluşturulur. İsim ve soyisim, girişten sonra Hesap > Profilim’den zorunludur (web siparişi için).',
+      }),
       el('input', {
         class: 'c-input',
         placeholder: '6 haneli kod',
@@ -761,12 +1310,16 @@ function openAuthModal() {
             const code = /** @type {HTMLInputElement} */ (
               modal.querySelector('#cd')
             ).value.trim();
+            err2.textContent = '';
             try {
               const { accessToken, refreshToken } = await api(
                 '/auth/otp/verify',
                 {
                   method: 'POST',
-                  body: JSON.stringify({ phone, code }),
+                  body: JSON.stringify({
+                    phone,
+                    code,
+                  }),
                 },
               );
               setToken(accessToken, refreshToken);
@@ -788,35 +1341,59 @@ function openAuthModal() {
   document.body.append(back);
 }
 
-function renderTopbar() {
+function renderTopbar(me) {
   parseRoute();
+  const lock = webCustomerProfileLocked(me);
+  const goMenu = () => {
+    if (lock) {
+      setRoute('account', 'profilim');
+      return;
+    }
+    setRoute('menu');
+  };
+  const goCart = () => {
+    if (lock) {
+      setRoute('account', 'profilim');
+      return;
+    }
+    setRoute('cart');
+  };
+  const brandLogoStyle = `mask-image:url("${geyikBrandUrl}");-webkit-mask-image:url("${geyikBrandUrl}")`;
   return el('header', { class: 'c-topbar' }, [
-    el('a', {
-      href: menuHomeHref(),
-      class: 'c-brand',
-      text: 'DAINO',
-      onclick: (e) => {
-        if (e.button !== 0) return;
-        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        e.preventDefault();
-        parseRoute();
-        setRoute('menu');
+    el(
+      'a',
+      {
+        href: '/',
+        class: 'c-brand',
       },
-    }),
+      [
+        el('span', {
+          class: 'c-brand-logo',
+          'aria-hidden': 'true',
+          style: brandLogoStyle,
+        }),
+        'DAINO',
+      ],
+    ),
     el('div', { class: 'c-topbar-actions' }, [
       tableSlug
         ? el('span', { class: 'c-badge', text: 'Masa' })
         : el('span', { class: 'c-badge', text: 'Web' }),
       el(
         'button',
-        { class: 'c-btn c-btn--ghost c-btn--sm', onclick: () => setRoute('account') },
+        { class: 'c-btn c-btn--ghost c-btn--sm', onclick: goMenu },
+        ['Menü'],
+      ),
+      el(
+        'button',
+        { class: 'c-btn c-btn--ghost c-btn--sm', onclick: () => setRoute('account', 'hesabim') },
         ['Hesap'],
       ),
       el(
         'button',
         {
           class: 'c-btn c-btn--sm',
-          onclick: () => setRoute('cart'),
+          onclick: goCart,
         },
         [tableSlug ? `Özet (${cartCount()})` : `Sepet (${cartCount()})`],
       ),
@@ -824,15 +1401,26 @@ function renderTopbar() {
   ]);
 }
 
-function renderCartBar() {
+function renderCartBar(me) {
   if (parseRoute() === 'cart') return null;
+  if (webCustomerProfileLocked(me)) return null;
   if (!cart.length) return null;
   const isTable = !!tableSlug;
+  const lock = webCustomerProfileLocked(me);
   return el('div', { class: 'c-cart-bar' }, [
     el('span', { class: 'c-cart-total', text: formatTry(cartTotal()) }),
     el(
       'button',
-      { class: 'c-btn c-btn--sm', onclick: () => setRoute('cart') },
+      {
+        class: 'c-btn c-btn--sm',
+        onclick: () => {
+          if (lock) {
+            setRoute('account', 'profilim');
+            return;
+          }
+          setRoute('cart');
+        },
+      },
       [isTable ? 'Özete git' : 'Sepete git'],
     ),
   ]);
@@ -842,7 +1430,35 @@ async function render() {
   const app = document.getElementById('app');
   if (!app) return;
   app.innerHTML = '';
-  const route = parseRoute();
+  let route = parseRoute();
+  const tok = getToken() || getRefreshToken();
+  /** @type {any | null} */
+  let meSnapshot = null;
+  if (tok) {
+    try {
+      meSnapshot = await api('/users/me');
+    } catch {
+      meSnapshot = null;
+    }
+  }
+  const webIncomplete =
+    !tableSlug &&
+    meSnapshot?.role === 'CUSTOMER' &&
+    !customerProfileComplete(meSnapshot);
+  if (webIncomplete) {
+    if (route === 'menu' || route === 'cart') {
+      accountTab = 'profilim';
+      history.replaceState({}, '', accountPath('profilim'));
+      route = 'account';
+    } else if (
+      route === 'account' &&
+      accountTab !== 'profilim' &&
+      accountTab !== 'hesabim'
+    ) {
+      accountTab = 'profilim';
+      history.replaceState({}, '', accountPath('profilim'));
+    }
+  }
 
   if (!tableSlug) {
     tableMeta = null;
@@ -867,14 +1483,14 @@ async function render() {
     });
   }
 
-  app.append(renderTopbar());
+  app.append(renderTopbar(meSnapshot));
   const main = el('main', { class: 'c-main' });
   if (route === 'menu' && menuCache) renderMenu(main);
-  else if (route === 'account') renderAccount(main);
-  else if (route === 'cart') renderCart(main);
+  else if (route === 'account') renderAccount(main, meSnapshot || undefined);
+  else if (route === 'cart') renderCart(main, meSnapshot);
   else main.append(el('p', { class: 'c-error', text: 'Menü yüklenemedi.' }));
   app.append(main);
-  const bar = renderCartBar();
+  const bar = renderCartBar(meSnapshot);
   if (bar) app.append(bar);
 }
 

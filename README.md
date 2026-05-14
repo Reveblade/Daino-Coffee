@@ -13,7 +13,7 @@ Repository: [github.com/Daino-Coffee/frontend](https://github.com/Daino-Coffee/f
 | **Marketing site** | Hero, coffee grid, mission/roast sections (`index.html`, `src/main.js`, `src/style.css`) |
 | **Customer app** | Menu, shop/service banner, table QR flow (`#/masa/:slug` or `?t=`), cart, SMS OTP login, addresses, in-place vs online checkout (`customer.html`, `src/customer/*`) |
 | **Build** | Multi-page Vite output: `index.html` + `customer.html` + hashed assets |
-| **Docker / Cloud Run** | `Dockerfile` + `docker/nginx.conf` (serves `dist/`; redirects **`/t/{slug}`** → `customer.html#/masa/{slug}` for QR compatibility) |
+| **Docker / Cloud Run** | `Dockerfile` + `docker/default.conf.template` (nginx; `${PORT}` for Cloud Run; **`/t/{slug}`** → `/siparis/masa/{slug}`) |
 | **Compose** | `compose.yaml` for local nginx image (optional) |
 
 ---

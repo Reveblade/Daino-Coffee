@@ -70,6 +70,54 @@ if (ham && menu) {
   });
 }
 
+function prefersReducedMotion() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
+}
+
+/** In-page nav: smooth scroll without leaving `#fragment` in the address bar. */
+function scrollToIdWithoutHash(id) {
+  const el = document.getElementById(id);
+  if (!el) return false;
+  el.scrollIntoView({
+    behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+    block: 'start',
+  });
+  const path = `${window.location.pathname}${window.location.search}`;
+  if (window.location.hash) {
+    history.replaceState(null, '', path);
+  }
+  return true;
+}
+
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('a');
+  if (!a) return;
+  const href = a.getAttribute('href');
+  if (!href || !href.startsWith('#') || href === '#') return;
+  const id = href.slice(1);
+  if (!document.getElementById(id)) return;
+  e.preventDefault();
+  scrollToIdWithoutHash(id);
+  if (menu?.classList.contains('open')) {
+    menu.classList.remove('open');
+    nav?.classList.remove('nav-menu-open');
+    syncNavHeightCssVar();
+  }
+});
+
+(() => {
+  const id = window.location.hash?.slice(1);
+  if (!id || !document.getElementById(id)) return;
+  const path = `${window.location.pathname}${window.location.search}`;
+  history.replaceState(null, '', path);
+  window.requestAnimationFrame(() => {
+    document.getElementById(id)?.scrollIntoView({
+      behavior: prefersReducedMotion() ? 'auto' : 'smooth',
+      block: 'start',
+    });
+  });
+})();
+
 /** Tile HTML until the row covers the band, then mirror for translateX(-50%) seam. */
 function buildMarqueeTrack(track) {
   const band = track?.closest('.diag-band');

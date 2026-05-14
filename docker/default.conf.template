@@ -1,6 +1,6 @@
 server {
-    # Cloud Run sends traffic to $PORT (default 8080); listen must match.
-    listen 8080;
+    # Cloud Run sets PORT; nginx image substitutes ${PORT} from env at startup.
+    listen ${PORT};
     server_name localhost;
     root /usr/share/nginx/html;
     index index.html;
@@ -10,11 +10,11 @@ server {
 
     # Sipariş uygulaması: düzgün path URL’leri (ör. /siparis/masa/{slug})
     location ^~ /siparis {
-        try_files $uri /customer.html;
+        try_files $$uri /customer.html;
     }
 
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files $$uri $$uri/ /index.html;
     }
 
     location /assets/ {
@@ -23,6 +23,6 @@ server {
 
     # QR menü: /t/{slug} -> sipariş uygulaması
     location ~ ^/t/([^/]+)$ {
-        return 302 /siparis/masa/$1;
+        return 302 /siparis/masa/$$1;
     }
 }
