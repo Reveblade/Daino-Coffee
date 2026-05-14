@@ -1162,9 +1162,8 @@
       border-top: 1px solid rgba(255, 255, 255, 0.08);
       padding: 16px clamp(20px, 4vw, 48px);
       background: var(--green);
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
       align-items: center;
       gap: 12px;
       font-size: 0.7rem;
@@ -1172,10 +1171,17 @@
       text-transform: uppercase;
       color: rgba(245, 245, 220, 0.35);
     }
+    .site-footer-copy { justify-self: start; }
+    .site-footer-made { justify-self: center; text-align: center; }
+    .site-footer-social { justify-self: end; text-align: right; }
     .site-footer a {
       color: rgba(245, 245, 220, 0.45);
       text-decoration: none;
       margin-left: 16px;
+    }
+    .site-footer-made a,
+    .site-footer-social a:first-child {
+      margin-left: 0;
     }
     .site-footer a:hover { color: var(--gold); }
 
