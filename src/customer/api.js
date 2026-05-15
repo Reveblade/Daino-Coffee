@@ -38,14 +38,27 @@ async function fetchWithNetworkHint(url, opts) {
       typeof window !== 'undefined' && window.location?.origin
         ? window.location.origin
         : '';
+    const pageIsLocal =
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(pageOrigin);
+    const apiLooksLocal = /localhost|127\.0\.0\.1/i.test(base);
+    const deployHint =
+      pageOrigin && !pageIsLocal && apiLooksLocal
+        ? 'Üretim: frontend Docker/Cloud Build sırasında --build-arg VITE_API_BASE_URL=https://<backend>.run.app/v1 verilmeli; aksi halde bundle localhost içerir.'
+        : '';
+    const pageLine = pageOrigin
+      ? deployHint
+        ? `Sayfa: ${pageOrigin}`
+        : `Sayfa: ${pageOrigin} — backend CORS_ORIGINS bu adresi içermeli (localhost ile 127.0.0.1 aynı değildir).`
+      : '';
     const msg = [
       'Sunucuya ulaşılamadı (Failed to fetch).',
       `İstek: ${url}`,
       `VITE_API_BASE_URL: ${base}`,
-      pageOrigin
-        ? `Sayfa: ${pageOrigin} — backend CORS_ORIGINS bu adresi içermeli (localhost ile 127.0.0.1 aynı değildir).`
+      pageLine,
+      deployHint,
+      pageIsLocal || !apiLooksLocal
+        ? 'Backend çalışıyor mu? (örn. cd backend && npm run start:dev, PORT=3000)'
         : '',
-      'Backend çalışıyor mu? (örn. cd backend && npm run start:dev, PORT=3000)',
     ]
       .filter(Boolean)
       .join(' ');
