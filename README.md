@@ -81,7 +81,7 @@ pnpm run preview   # local preview of dist
 docker build -t daino-frontend .
 ```
 
-Runtime listens on **8080** (nginx). For Cloud Build / Cloud Run, see [`cloudbuild.yaml`](cloudbuild.yaml).
+Runtime listens on **8080** (nginx).
 
 ---
 
