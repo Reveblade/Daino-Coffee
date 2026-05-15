@@ -1,10 +1,27 @@
 # Build the Vite + nginx image and push to Container Registry (image: frontend).
-# From this repository: gcloud builds submit . --config=cloudbuild.yaml
+# Vite bakes API / WS URLs at build time — set substitutions for production deploys.
+#
+# From this repository:
+#   gcloud builds submit . --config=cloudbuild.yaml \
+#     --substitutions=_VITE_API_BASE_URL=https://YOUR-BACKEND-XXXX.run.app/v1,_VITE_WS_URL=wss://YOUR-BACKEND-XXXX.run.app/ws/store
+#
+# _VITE_WS_URL boş bırakılırsa Dockerfile varsayılanı kullanılır; api.js ayrıca API host'tan türetebilir.
+
+substitutions:
+  _VITE_API_BASE_URL: 'https://api.example.com/v1'
+  _VITE_WS_URL: ''
+
+options:
+  substitutionOption: ALLOW_LOOSE
 
 steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
+      - '--build-arg'
+      - 'VITE_API_BASE_URL=${_VITE_API_BASE_URL}'
+      - '--build-arg'
+      - 'VITE_WS_URL=${_VITE_WS_URL}'
       - '-t'
       - 'gcr.io/$PROJECT_ID/frontend:$BUILD_ID'
       - '-t'
