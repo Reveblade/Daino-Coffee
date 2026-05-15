@@ -1,0 +1,31 @@
+# Build the Vite + nginx admin image and push to Container Registry (image: authority).
+# Vite bakes API / WS URLs at build time — override substitutions for production.
+#
+# From this repository:
+#   gcloud builds submit . --config=cloudbuild.yaml \
+#     --substitutions=_VITE_API_BASE_URL=https://YOUR-BACKEND.run.app/v1,_VITE_ORDERS_WS_URL=wss://YOUR-BACKEND.run.app/ws/orders
+#
+# If staff WebSocket URL can be derived from the API host, omit _VITE_ORDERS_WS_URL
+# (empty default) and the app uses its built-in default.
+
+substitutions:
+  _VITE_API_BASE_URL: 'https://api.example.com/v1'
+  _VITE_ORDERS_WS_URL: ''
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'VITE_API_BASE_URL=${_VITE_API_BASE_URL}'
+      - '--build-arg'
+      - 'VITE_ORDERS_WS_URL=${_VITE_ORDERS_WS_URL}'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/authority:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/authority:latest'
+      - '.'
+
+images:
+  - 'gcr.io/$PROJECT_ID/authority:$BUILD_ID'
+  - 'gcr.io/$PROJECT_ID/authority:latest'
