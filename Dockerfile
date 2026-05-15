@@ -18,7 +18,9 @@ RUN pnpm run build
 
 FROM nginx:1.27-alpine
 ENV PORT=8080
-COPY docker/default.conf.template /etc/nginx/templates/default.conf.template
+# Avoid envsubst/templates: base image may ship templates that overwrite conf.d at startup.
+RUN rm -rf /etc/nginx/templates && mkdir -p /etc/nginx/templates
+COPY docker/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html
 
 EXPOSE 8080
