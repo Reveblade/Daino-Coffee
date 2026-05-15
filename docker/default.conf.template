@@ -22,7 +22,8 @@ server {
     }
 
     # QR menü: /t/{slug} -> sipariş uygulaması
-    location ~ ^/t/([^/]+)$ {
+    # Trailing $$ → single $ after envsubst (regex end anchor); bare $ breaks envsubst.
+    location ~ ^/t/([^/]+)$$ {
         return 302 /siparis/masa/$$1;
     }
 }
