@@ -30,7 +30,7 @@ export class TablesService {
   }
 
   private menuUrlForSlug(publicSlug: string): string {
-    return `${this.baseUrl()}/t/${publicSlug}`;
+    return `${this.baseUrl()}/siparis/masa/${encodeURIComponent(publicSlug)}`;
   }
 
   /**
