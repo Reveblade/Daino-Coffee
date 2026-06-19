@@ -49,7 +49,7 @@ function updateNavScrolled() {
 window.addEventListener('scroll', updateNavScrolled, { passive: true });
 updateNavScrolled();
 
-const NAV_AUTO_HIDE_DELAY = 5000;
+const NAV_AUTO_HIDE_DELAY = 1000;
 const NAV_REVEAL_ZONE = 72;
 let navHideTimer;
 
