@@ -15,17 +15,21 @@ let tableSlug = null;
 let tableMetaSlug = null;
 /** @type {{ productId: string, name: string, unitPriceKurus: number, qty: number, optionsPayload?: { groupId: string, selectedChoiceIds: string[] }[], optionsSummary?: string }[]} */
 let cart = [];
+/** @type {string | null} */
+let activeCartStorageKey = null;
 /** QR menü: seçili kategori zinciri (köke göre id dizisi); boş = kök kategoriler. */
 let menuBrowseStack = [];
 
 /** Public URL prefix for the ordering app (nginx + Vite dev rewrite). */
 const ORDER_APP_BASE = '/siparis';
+const CART_STORAGE_PREFIX = 'daino:customer-cart:v1:';
 
 /** `/siparis/hesap` alt sekmesi */
 let accountTab = 'hesabim';
 
 const ACCOUNT_TABS = new Set(['hesabim', 'profilim', 'adreslerim', 'siparislerim']);
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? '';
+const GOOGLE_MAPS_MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID?.trim() ?? '';
 
 /** @type {Promise<any> | null} */
 let googleMapsLoadPromise = null;
@@ -144,10 +148,12 @@ function loadGoogleMaps() {
     };
     const params = new URLSearchParams({
       key: GOOGLE_MAPS_API_KEY,
-      libraries: 'places',
+      libraries: 'places,marker',
       callback: cbName,
       language: 'tr',
       region: 'TR',
+      v: 'weekly',
+      loading: 'async',
     });
     script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
     script.async = true;
@@ -160,12 +166,13 @@ function loadGoogleMaps() {
 
 /** @param {any[]} components */
 function findAddressComponent(components, type) {
-  return components.find((c) => Array.isArray(c.types) && c.types.includes(type))?.long_name ?? '';
+  const component = components.find((c) => Array.isArray(c.types) && c.types.includes(type));
+  return component?.long_name ?? component?.longText ?? '';
 }
 
 /** @param {any} place */
 function addressFromGooglePlace(place) {
-  const components = place?.address_components ?? [];
+  const components = place?.address_components ?? place?.addressComponents ?? [];
   const streetNumber = findAddressComponent(components, 'street_number');
   const route = findAddressComponent(components, 'route');
   const neighborhood =
@@ -182,14 +189,14 @@ function addressFromGooglePlace(place) {
     joinPhoneGroups([neighborhood, joinPhoneGroups([route, streetNumber])]) ||
     place?.formatted_address ||
     '';
-  const location = place?.geometry?.location;
+  const location = place?.geometry?.location ?? place?.location;
 
   return {
     line1,
     district,
     city,
-    formattedAddress: place?.formatted_address || '',
-    placeId: place?.place_id || '',
+    formattedAddress: place?.formatted_address || place?.formattedAddress || '',
+    placeId: place?.place_id || place?.id || '',
     lat: typeof location?.lat === 'function' ? location.lat() : undefined,
     lng: typeof location?.lng === 'function' ? location.lng() : undefined,
   };
@@ -427,6 +434,51 @@ function cartTotal() {
   return cart.reduce((s, i) => s + i.unitPriceKurus * i.qty, 0);
 }
 
+function cartStorageKey() {
+  return `${CART_STORAGE_PREFIX}${tableSlug ? `table:${tableSlug}` : 'web'}`;
+}
+
+/** @param {unknown} value */
+function normalizeSavedCart(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((line) => {
+      if (!line || typeof line !== 'object') return null;
+      const item = /** @type {any} */ (line);
+      const productId = String(item.productId || '').trim();
+      const name = String(item.name || '').trim();
+      const unitPriceKurus = Number(item.unitPriceKurus);
+      const qty = Math.max(1, Math.floor(Number(item.qty) || 0));
+      if (!productId || !name || !Number.isFinite(unitPriceKurus) || qty < 1) return null;
+      const optionsPayload = Array.isArray(item.optionsPayload) ? item.optionsPayload : [];
+      const optionsSummary = typeof item.optionsSummary === 'string' ? item.optionsSummary : '';
+      return { productId, name, unitPriceKurus, qty, optionsPayload, optionsSummary };
+    })
+    .filter(Boolean);
+}
+
+function loadCartForCurrentRoute() {
+  const key = cartStorageKey();
+  if (activeCartStorageKey === key) return;
+  activeCartStorageKey = key;
+  try {
+    cart = normalizeSavedCart(JSON.parse(localStorage.getItem(key) || '[]'));
+  } catch {
+    cart = [];
+  }
+}
+
+function persistCart() {
+  const key = activeCartStorageKey || cartStorageKey();
+  activeCartStorageKey = key;
+  try {
+    if (cart.length) localStorage.setItem(key, JSON.stringify(cart));
+    else localStorage.removeItem(key);
+  } catch {
+    // Storage can be unavailable in private mode; the in-memory cart still works.
+  }
+}
+
 /** @param {any} line */
 function cartLineKey(line) {
   const o = line.optionsPayload ?? [];
@@ -620,6 +672,7 @@ function mergeCartLine(line) {
   const ex = cart.find((c) => cartLineKey(c) === k);
   if (ex) ex.qty += line.qty;
   else cart.push(line);
+  persistCart();
 }
 
 function addProductChoiceToCart(p) {
@@ -1069,26 +1122,40 @@ function appendAddressForm(panel, opts = {}) {
         if (!google) return;
         mapSelectionRequired = true;
         const defaultCenter = { lat: 41.0082, lng: 28.9784 };
-        const map = new google.maps.Map(mapCanvas, {
+        const mapOptions = {
           center: defaultCenter,
           zoom: 12,
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: false,
-        });
-        const marker = new google.maps.Marker({
-          map,
-          position: defaultCenter,
-          draggable: true,
-        });
+        };
+        if (GOOGLE_MAPS_MAP_ID) mapOptions.mapId = GOOGLE_MAPS_MAP_ID;
+
+        const map = new google.maps.Map(mapCanvas, mapOptions);
+        const AdvancedMarkerElement = GOOGLE_MAPS_MAP_ID
+          ? google.maps.marker?.AdvancedMarkerElement
+          : null;
+        const marker = AdvancedMarkerElement
+          ? new AdvancedMarkerElement({
+              map,
+              position: defaultCenter,
+              title: 'Teslimat noktası',
+              gmpDraggable: true,
+            })
+          : new google.maps.Marker({
+              map,
+              position: defaultCenter,
+              draggable: true,
+            });
         const geocoder = new google.maps.Geocoder();
-        const autocomplete = new google.maps.places.Autocomplete(mapSearch, {
-          componentRestrictions: { country: 'tr' },
-          fields: ['address_components', 'formatted_address', 'geometry', 'place_id'],
-        });
+
+        function setMarkerPosition(position) {
+          if (typeof marker.setPosition === 'function') marker.setPosition(position);
+          else marker.position = position;
+        }
 
         function reversePick(latLng) {
-          marker.setPosition(latLng);
+          setMarkerPosition(latLng);
           map.panTo(latLng);
           geocoder.geocode({ location: latLng }, (results, status) => {
             if (status === 'OK' && results?.[0]) {
@@ -1103,18 +1170,62 @@ function appendAddressForm(panel, opts = {}) {
           });
         }
 
-        autocomplete.addListener('place_changed', () => {
-          const place = autocomplete.getPlace();
-          const location = place?.geometry?.location;
-          if (!location) {
-            mapStatus.textContent = 'Konum bulunamadı, lütfen daha net bir adres arayın.';
-            return;
-          }
-          map.setCenter(location);
-          map.setZoom(16);
-          marker.setPosition(location);
-          applyPickedAddress(addressFromGooglePlace(place));
-        });
+        function bindLegacyAutocomplete() {
+          const autocomplete = new google.maps.places.Autocomplete(mapSearch, {
+            componentRestrictions: { country: 'tr' },
+            fields: ['address_components', 'formatted_address', 'geometry', 'place_id'],
+          });
+
+          autocomplete.addListener('place_changed', () => {
+            const place = autocomplete.getPlace();
+            const location = place?.geometry?.location;
+            if (!location) {
+              mapStatus.textContent = 'Konum bulunamadı, lütfen daha net bir adres arayın.';
+              return;
+            }
+            map.setCenter(location);
+            map.setZoom(16);
+            setMarkerPosition(location);
+            applyPickedAddress(addressFromGooglePlace(place));
+          });
+        }
+
+        if (google.maps.places?.PlaceAutocompleteElement) {
+          const placeAutocomplete = new google.maps.places.PlaceAutocompleteElement({
+            includedRegionCodes: ['tr'],
+          });
+          placeAutocomplete.className = 'c-map-search';
+          placeAutocomplete.setAttribute('aria-label', 'Konum ara');
+          mapSearch.replaceWith(placeAutocomplete);
+          placeAutocomplete.addEventListener('gmp-select', async (event) => {
+            try {
+              const place = event.placePrediction?.toPlace();
+              if (!place) {
+                mapStatus.textContent = 'Konum bulunamadı, lütfen daha net bir adres arayın.';
+                return;
+              }
+              await place.fetchFields({
+                fields: ['addressComponents', 'formattedAddress', 'location', 'id', 'viewport'],
+              });
+              const location = place.location;
+              if (!location) {
+                mapStatus.textContent = 'Konum bulunamadı, lütfen daha net bir adres arayın.';
+                return;
+              }
+              if (place.viewport) map.fitBounds(place.viewport);
+              else {
+                map.setCenter(location);
+                map.setZoom(16);
+              }
+              setMarkerPosition(location);
+              applyPickedAddress(addressFromGooglePlace(place));
+            } catch {
+              mapStatus.textContent = 'Konum bilgisi alınamadı, lütfen tekrar deneyin.';
+            }
+          });
+        } else {
+          bindLegacyAutocomplete();
+        }
         map.addListener('click', (event) => {
           if (event.latLng) reversePick(event.latLng);
         });
@@ -1784,6 +1895,7 @@ function renderCart(root, me) {
                 class: 'c-btn c-btn--ghost c-btn--sm',
                 onclick: () => {
                   cart.splice(idx, 1);
+                  persistCart();
                   render();
                 },
               },
@@ -1877,6 +1989,7 @@ async function submitOrder() {
         body: JSON.stringify({ tableSlug, items }),
       });
       cart = [];
+      persistCart();
       alert(
         res?.augmented
           ? 'Seçtikleriniz mevcut masanın siparişine eklendi.'
@@ -1905,6 +2018,7 @@ async function submitOrder() {
         body: JSON.stringify({ items, addressIndex: ix }),
       });
       cart = [];
+      persistCart();
       alert('Siparişiniz alındı.');
     }
     render();
@@ -2060,6 +2174,7 @@ async function render() {
   const app = document.getElementById('app');
   if (!app) return;
   let route = parseRoute();
+  loadCartForCurrentRoute();
   const tok = getToken() || getRefreshToken();
   /** @type {any | null} */
   let meSnapshot = null;

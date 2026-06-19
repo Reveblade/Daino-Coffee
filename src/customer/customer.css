@@ -888,6 +888,8 @@ body.customer-body {
 }
 
 .c-map-search {
+  display: block;
+  width: 100%;
   margin-bottom: 8px;
 }
 

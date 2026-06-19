@@ -42,6 +42,8 @@ Copy [`.env.example`](.env.example) to `.env` (optional for local dev):
 | Variable | Description |
 |----------|-------------|
 | `VITE_API_BASE_URL` | API root **including** `/v1`, e.g. `http://localhost:3000/v1` |
+| `VITE_GOOGLE_MAPS_API_KEY` | Optional browser key for Google Maps address picking |
+| `VITE_GOOGLE_MAPS_MAP_ID` | Optional Google Maps Map ID; required to use Advanced Markers |
 
 Vite injects `import.meta.env.VITE_*` at build time.
 
