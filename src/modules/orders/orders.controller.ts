@@ -71,13 +71,25 @@ class CreateOnlineOrderDto {
 }
 
 class InPlaceActionDto {
-  @IsIn(['START', 'READY', 'AWAIT_PAYMENT', 'MARK_PAID', 'CANCEL'])
-  action: 'START' | 'READY' | 'AWAIT_PAYMENT' | 'MARK_PAID' | 'CANCEL';
+  @IsIn(['START', 'READY', 'AWAIT_PAYMENT', 'MARK_PAID', 'CANCEL', 'COMPLETE'])
+  action:
+    | 'START'
+    | 'READY'
+    | 'AWAIT_PAYMENT'
+    | 'MARK_PAID'
+    | 'CANCEL'
+    | 'COMPLETE';
 }
 
 class OnlineActionDto {
-  @IsIn(['CONFIRM', 'START_PREP', 'READY_HANDOFF', 'CANCEL', 'MARK_PAID'])
-  action: 'CONFIRM' | 'START_PREP' | 'READY_HANDOFF' | 'CANCEL' | 'MARK_PAID';
+  @IsIn(['CONFIRM', 'START_PREP', 'READY_HANDOFF', 'CANCEL', 'MARK_PAID', 'COMPLETE'])
+  action:
+    | 'CONFIRM'
+    | 'START_PREP'
+    | 'READY_HANDOFF'
+    | 'CANCEL'
+    | 'MARK_PAID'
+    | 'COMPLETE';
 }
 
 class AssignCourierDto {
@@ -132,13 +144,21 @@ export class OrdersController {
     @Query('page') page?: string,
     @Query('pageSize') pageSize?: string,
     @Query('channel') channel?: OrderChannel,
+    @Query('tableNumber') tableNumber?: string,
   ) {
     return this.orders.listOrderHistory(user, {
       q,
       page: page ? parseInt(page, 10) : undefined,
       pageSize: pageSize ? parseInt(pageSize, 10) : undefined,
       channel,
+      tableNumber,
     });
+  }
+
+  /** Herkese açık: QR masa özetinde mevcut açık hesabı gösterir. */
+  @Get('in-place/table/:tableSlug')
+  getOpenInPlaceForTable(@Param('tableSlug') tableSlug: string) {
+    return this.orders.getOpenInPlaceOrderByTableSlug(tableSlug);
   }
 
   @Get(':id')

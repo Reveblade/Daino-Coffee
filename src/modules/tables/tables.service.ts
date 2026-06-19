@@ -74,6 +74,10 @@ export class TablesService {
     return this.tableModel.findOne({ publicSlug: slug, isActive: true }).exec();
   }
 
+  async findByNumber(number: number): Promise<TableDocument | null> {
+    return this.tableModel.findOne({ number }).exec();
+  }
+
   async listAll(): Promise<TableDocument[]> {
     return this.tableModel.find().sort({ number: 1 }).exec();
   }

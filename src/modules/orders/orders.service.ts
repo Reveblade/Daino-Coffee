@@ -88,6 +88,12 @@ export class OrdersService {
     }
   }
 
+  private ensureAdmin(actor: JwtPayload) {
+    if (![UserRole.ADMIN_OWNER, UserRole.ADMIN].includes(actor.role)) {
+      throw new ForbiddenException()
+    }
+  }
+
   private cashierHistorySince(): Date {
     return new Date(Date.now() - 24 * 60 * 60 * 1000)
   }
@@ -433,10 +439,15 @@ export class OrdersService {
       const newTotal = this.totalKurusFromItems(merged)
       const previousTotal = open.totalKurus
       const stamp = (open as OrderDocument & { updatedAt?: Date }).updatedAt
+      const nextStatus = [IN_PLACE.READY, IN_PLACE.AWAITING_PAYMENT].includes(
+        open.status as never,
+      )
+        ? IN_PLACE.IN_PROGRESS
+        : open.status
       const historyEntry = {
         at: new Date(),
         from: open.status,
-        to: open.status,
+        to: nextStatus,
         note: 'IN_PLACE_ITEMS_ADDED',
         metadata: {
           tableNumber,
@@ -451,6 +462,7 @@ export class OrdersService {
           $set: {
             items: merged,
             totalKurus: newTotal,
+            status: nextStatus,
           },
           $push: { history: historyEntry },
         },
@@ -653,7 +665,7 @@ export class OrdersService {
     return this.orderModel
       .find(mongoFilter)
       .populate({ path: 'tableId', select: 'number label publicSlug' })
-      .sort({ createdAt: -1 })
+      .sort({ updatedAt: -1, createdAt: -1 })
       .limit(limit)
       .exec()
   }
@@ -665,6 +677,7 @@ export class OrdersService {
       page?: number
       pageSize?: number
       channel?: OrderChannel
+      tableNumber?: string
     },
   ) {
     if (actor.role === UserRole.COURIER) {
@@ -738,6 +751,26 @@ export class OrdersService {
       and.push({ updatedAt: { $gte: this.cashierHistorySince() } })
     }
 
+    const rawTableNumber = query.tableNumber?.trim() ?? ''
+    if (rawTableNumber.length > 0) {
+      const tableNumber = Number(rawTableNumber)
+      if (!Number.isInteger(tableNumber) || tableNumber < 0) {
+        throw new BadRequestException('Invalid table number')
+      }
+
+      const table = await this.tablesService.findByNumber(tableNumber)
+      if (!table) {
+        return {
+          items: [],
+          total: 0,
+          page,
+          pageSize,
+        }
+      }
+
+      and.push({ tableId: table._id })
+    }
+
     const rawQ = query.q?.trim().slice(0, 100) ?? ''
     if (rawQ.length > 0) {
       const escaped = rawQ.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -809,10 +842,32 @@ export class OrdersService {
     return order
   }
 
+  async getOpenInPlaceOrderByTableSlug(tableSlug: string) {
+    const table = await this.tablesService.findBySlug(tableSlug)
+    if (!table || table.number === 0) {
+      return null
+    }
+    return this.orderModel
+      .findOne({
+        channel: OrderChannel.IN_PLACE,
+        tableId: table._id,
+        status: { $nin: [IN_PLACE.PAID, IN_PLACE.CANCELLED] },
+      })
+      .populate({ path: 'tableId', select: 'number label publicSlug' })
+      .sort({ createdAt: 1 })
+      .exec()
+  }
+
   async inPlaceTransition(
     actor: JwtPayload,
     id: string,
-    action: 'START' | 'READY' | 'AWAIT_PAYMENT' | 'MARK_PAID' | 'CANCEL',
+    action:
+      | 'START'
+      | 'READY'
+      | 'AWAIT_PAYMENT'
+      | 'MARK_PAID'
+      | 'CANCEL'
+      | 'COMPLETE',
   ) {
     this.ensureStaff(actor)
     const order = await this.orderModel.findById(id).exec()
@@ -826,6 +881,12 @@ export class OrdersService {
         throw new BadRequestException('Invalid transition')
       }
       next = IN_PLACE.CANCELLED
+    } else if (action === 'COMPLETE') {
+      this.ensureAdmin(actor)
+      if ([IN_PLACE.PAID, IN_PLACE.CANCELLED].includes(prev as never)) {
+        throw new BadRequestException('Invalid transition')
+      }
+      next = IN_PLACE.PAID
     } else if (action === 'START') {
       if (prev !== IN_PLACE.PLACED) {
         throw new BadRequestException('Invalid transition')
@@ -864,7 +925,13 @@ export class OrdersService {
   async onlineTransition(
     actor: JwtPayload,
     id: string,
-    action: 'CONFIRM' | 'START_PREP' | 'READY_HANDOFF' | 'CANCEL' | 'MARK_PAID',
+    action:
+      | 'CONFIRM'
+      | 'START_PREP'
+      | 'READY_HANDOFF'
+      | 'CANCEL'
+      | 'MARK_PAID'
+      | 'COMPLETE',
   ) {
     this.ensureStaff(actor)
     const order = await this.orderModel.findById(id).exec()
@@ -878,6 +945,12 @@ export class OrdersService {
         throw new BadRequestException('Invalid transition')
       }
       next = ONLINE.CANCELLED
+    } else if (action === 'COMPLETE') {
+      this.ensureAdmin(actor)
+      if ([ONLINE.PAID, ONLINE.CANCELLED].includes(prev as never)) {
+        throw new BadRequestException('Invalid transition')
+      }
+      next = ONLINE.PAID
     } else if (action === 'CONFIRM') {
       if (prev !== ONLINE.PLACED) {
         throw new BadRequestException('Invalid transition')
