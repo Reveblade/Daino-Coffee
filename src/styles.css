@@ -1,13 +1,21 @@
 :root {
-  --bg: #0f1410;
-  --panel: #1a241c;
-  --border: rgba(245, 245, 220, 0.12);
-  --text: #f5f5dc;
-  --muted: rgba(245, 245, 220, 0.6);
-  --accent: #c5cad3;
-  --btn: #e8eaee;
-  --btn-text: #14261a;
-  --danger: #e88;
+  --off-white: #f6f1e8;
+  --smoky-green-gray: #8d9a8b;
+  --smoky-green-gray-deep: #60726a;
+  --deep-navy: #142838;
+  --deep-navy-soft: #1c3446;
+  --deep-navy-deep: #0f202d;
+  --deep-navy-rgb: 20, 40, 56;
+  --light-oak: #d7b27d;
+  --bg: var(--deep-navy);
+  --panel: var(--deep-navy-soft);
+  --border: rgba(246, 241, 232, 0.22);
+  --text: var(--off-white);
+  --muted: rgba(246, 241, 232, 0.68);
+  --accent: var(--light-oak);
+  --btn: var(--light-oak);
+  --btn-text: var(--deep-navy-deep);
+  --danger: #d98978;
   --font: 'DM Sans', system-ui, sans-serif;
   --display: 'Bebas Neue', sans-serif;
 }
@@ -70,7 +78,7 @@ body {
   font-size: 1.15rem;
   font-weight: 700;
   letter-spacing: 0.42em;
-  color: #fff;
+  color: var(--off-white);
   text-transform: none;
   margin-bottom: 20px;
 }
@@ -109,7 +117,7 @@ body {
 
 .a-nav-btn:hover,
 .a-nav-btn.active {
-  background: rgba(245, 245, 220, 0.08);
+  background: rgba(246, 241, 232, 0.1);
   border-color: var(--border);
 }
 
@@ -278,7 +286,7 @@ body {
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(var(--deep-navy-rgb), 0.32);
   color: var(--text);
   width: 100%;
   max-width: 320px;
@@ -321,7 +329,7 @@ body {
 }
 
 .a-tab.active {
-  background: rgba(245, 245, 220, 0.1);
+  background: rgba(215, 178, 125, 0.18);
 }
 
 .a-table {
@@ -348,7 +356,7 @@ body {
   object-fit: contain;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: #fff;
+  background: var(--off-white);
 }
 
 .a-overlay {
@@ -359,7 +367,7 @@ body {
   align-items: center;
   justify-content: center;
   padding: 16px;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(var(--deep-navy-rgb), 0.62);
 }
 
 .a-dialog {
@@ -369,7 +377,7 @@ body {
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--panel);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 12px 40px rgba(var(--deep-navy-rgb), 0.35);
 }
 
 .a-dialog-title {
@@ -397,7 +405,7 @@ body {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(245, 245, 220, 0.1);
+  background: rgba(246, 241, 232, 0.12);
   font-size: 0.75rem;
 }
 
@@ -473,7 +481,7 @@ body {
 .a-check input {
   width: 18px;
   height: 18px;
-  accent-color: var(--accent, #c9a227);
+  accent-color: var(--accent, #d7b27d);
 }
 
 .a-image-strip {
