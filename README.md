@@ -13,7 +13,7 @@ Repository: [github.com/Daino-Coffee/frontend](https://github.com/Daino-Coffee/f
 | **Marketing site** | Hero, coffee grid, mission/roast sections (`index.html`, `src/main.js`, `src/style.css`) |
 | **Customer app** | Menu, shop/service banner, table QR flow (`#/masa/:slug` or `?t=`), cart, SMS OTP login, addresses, in-place vs online checkout (`customer.html`, `src/customer/*`) |
 | **Build** | Multi-page Vite output: `index.html` + `customer.html` + hashed assets |
-| **Docker / Cloud Run** | `Dockerfile` + `docker/default.conf` (nginx listens on **8080**; **`/t/{slug}`** → `/siparis/masa/{slug}`) |
+| **Docker / Cloud Run** | `Dockerfile` + `docker/default.conf` (nginx listens on **8080**; clean URLs under **`/siparis`**) |
 | **Compose** | `compose.yaml` for local nginx image (optional) |
 
 ---
@@ -54,8 +54,8 @@ pnpm dev
 ```
 
 - Marketing: `http://localhost:5173/`
-- Customer: `http://localhost:5173/customer.html#/`  
-- Table QR (dev): `http://localhost:5173/customer.html#/masa/<publicSlug>` (slug from backend **Tables** admin)
+- Customer: `http://localhost:5173/siparis`
+- Table QR (dev): `http://localhost:5173/siparis/masa/<publicSlug>` (slug from backend **Tables** admin)
 
 Ensure the backend allows this origin in **`CORS_ORIGINS`**.
 
@@ -87,7 +87,7 @@ Runtime listens on **8080** (nginx).
 
 ## QR menu URLs
 
-Backend stores menu URLs as `{MENU_PUBLIC_BASE_URL}/t/{slug}`. The bundled **nginx** config redirects **`/t/{slug}`** to **`/customer.html#/masa/{slug}`** so printed QRs work on the same host as the static site.
+Backend stores menu URLs as `{MENU_PUBLIC_BASE_URL}/siparis/masa/{slug}` so printed QRs open the ordering app directly on the same host as the static site.
 
 ---
 
