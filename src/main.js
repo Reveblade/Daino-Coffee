@@ -49,6 +49,35 @@ function updateNavScrolled() {
 window.addEventListener('scroll', updateNavScrolled, { passive: true });
 updateNavScrolled();
 
+const NAV_AUTO_HIDE_DELAY = 5000;
+const NAV_REVEAL_ZONE = 72;
+let navHideTimer;
+
+function isAtPageTop() {
+  return window.scrollY <= 8;
+}
+
+function setNavHidden(hidden) {
+  if (!nav || isAtPageTop() || menu?.classList.contains('open') || nav.matches(':hover, :focus-within')) return;
+  nav.classList.toggle('nav-hidden', hidden);
+}
+
+function scheduleNavHide() {
+  if (!nav) return;
+  window.clearTimeout(navHideTimer);
+  if (isAtPageTop()) {
+    nav.classList.remove('nav-hidden');
+    return;
+  }
+  navHideTimer = window.setTimeout(() => setNavHidden(true), NAV_AUTO_HIDE_DELAY);
+}
+
+function revealNav() {
+  if (!nav) return;
+  window.clearTimeout(navHideTimer);
+  nav.classList.remove('nav-hidden');
+}
+
 function syncNavHeightCssVar() {
   if (!nav) return;
   document.documentElement.style.setProperty('--nav-height', `${nav.offsetHeight}px`);
@@ -66,8 +95,40 @@ if (ham && menu) {
   ham.addEventListener('click', () => {
     menu.classList.toggle('open');
     nav?.classList.toggle('nav-menu-open', menu.classList.contains('open'));
+    if (menu.classList.contains('open')) {
+      revealNav();
+    } else {
+      scheduleNavHide();
+    }
     syncNavHeightCssVar();
   });
+}
+
+if (nav && window.matchMedia?.('(hover: hover) and (pointer: fine)')?.matches) {
+  window.addEventListener(
+    'pointermove',
+    (event) => {
+      if (event.clientY <= NAV_REVEAL_ZONE || nav.matches(':hover')) {
+        revealNav();
+        scheduleNavHide();
+      }
+    },
+    { passive: true },
+  );
+  nav.addEventListener('focusin', revealNav);
+  nav.addEventListener('focusout', scheduleNavHide);
+  window.addEventListener(
+    'scroll',
+    () => {
+      if (isAtPageTop()) {
+        revealNav();
+      } else {
+        scheduleNavHide();
+      }
+    },
+    { passive: true },
+  );
+  scheduleNavHide();
 }
 
 function prefersReducedMotion() {
@@ -251,6 +312,12 @@ if (missionJustified) {
   missionJustified.setAttribute('aria-label', MISSION_ARIA_LABEL);
   bindMissionLayout(missionJustified);
 }
+
+document.querySelectorAll('[data-customer-auth-cta]').forEach((button) => {
+  button.addEventListener('click', () => {
+    window.location.href = '/siparis/hesap';
+  });
+});
 
 const list = document.getElementById('roastList');
 if (list) {

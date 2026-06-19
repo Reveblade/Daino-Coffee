@@ -69,6 +69,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, 'index.html'),
         customer: resolve(__dirname, 'customer.html'),
+        iletisim: resolve(__dirname, 'iletisim.html'),
         ekipmanEspresso: resolve(__dirname, 'ekipman/espresso-makinesi.html'),
         ekipmanGrinder: resolve(__dirname, 'ekipman/kahve-ogutucusu.html'),
         ekipmanFiltre: resolve(__dirname, 'ekipman/filtre-demleme.html'),

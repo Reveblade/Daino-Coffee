@@ -7,8 +7,10 @@ RUN corepack enable
 # Vite bakes these into the static bundle at build time (set for your API / WS hosts).
 ARG VITE_API_BASE_URL=http://localhost:3000/v1
 ARG VITE_WS_URL=
+ARG VITE_GOOGLE_MAPS_API_KEY=
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 ENV VITE_WS_URL=${VITE_WS_URL}
+ENV VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY}
 
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile

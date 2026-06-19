@@ -1,3 +1,4 @@
+import '@phosphor-icons/web/regular';
 import { api, formatTry, getRefreshToken, getToken, setToken } from './api.js';
 import { connectStoreRealtime } from './realtime.js';
 import geyikBrandUrl from '../../assets/geyik.svg?url';
@@ -24,6 +25,10 @@ const ORDER_APP_BASE = '/siparis';
 let accountTab = 'hesabim';
 
 const ACCOUNT_TABS = new Set(['hesabim', 'profilim', 'adreslerim', 'siparislerim']);
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? '';
+
+/** @type {Promise<any> | null} */
+let googleMapsLoadPromise = null;
 
 /** @param {string} tab */
 function accountPath(tab) {
@@ -53,8 +58,141 @@ function customerProfileComplete(me) {
 }
 
 /** @param {any | null | undefined} me */
-function webCustomerProfileLocked(me) {
-  return !!me && !tableSlug && me.role === 'CUSTOMER' && !customerProfileComplete(me);
+function customerHasAddress(me) {
+  if (!me || me.role !== 'CUSTOMER') return true;
+  if (typeof me.hasAddress === 'boolean') return me.hasAddress;
+  return Array.isArray(me.addresses) && me.addresses.length > 0;
+}
+
+/** @param {any | null | undefined} me */
+function customerAccountComplete(me) {
+  if (!me || me.role !== 'CUSTOMER') return true;
+  if (typeof me.accountComplete === 'boolean') return me.accountComplete;
+  return customerProfileComplete(me) && customerHasAddress(me);
+}
+
+/** @param {any | null | undefined} me */
+function webCustomerAccountLocked(me) {
+  return !!me && !tableSlug && me.role === 'CUSTOMER' && !customerAccountComplete(me);
+}
+
+/** @param {string} value */
+function normalizeCustomerPhone(value) {
+  let digits = String(value || '').replace(/\D/g, '');
+  while (digits.startsWith('00')) {
+    digits = digits.slice(2);
+  }
+  if (digits.startsWith('90')) {
+    digits = digits.slice(2);
+  } else if (digits.startsWith('0')) {
+    digits = digits.slice(1);
+  }
+  if (digits.length === 10 && digits.startsWith('5')) {
+    return `+90${digits}`;
+  }
+  return '';
+}
+
+/** @param {string[]} groups */
+function joinPhoneGroups(groups) {
+  return groups.filter(Boolean).join(' ');
+}
+
+/** @param {string} nationalDigits */
+function formatNationalPhone(nationalDigits) {
+  const d = nationalDigits.slice(0, 10);
+  return joinPhoneGroups([d.slice(0, 3), d.slice(3, 6), d.slice(6, 8), d.slice(8, 10)]);
+}
+
+/** @param {string} value */
+function formatCustomerPhoneInput(value) {
+  const raw = String(value || '').trimStart();
+  let digits = raw.replace(/\D/g, '');
+  while (digits.startsWith('00')) {
+    digits = digits.slice(2);
+  }
+  const wantsInternational = raw.startsWith('+') || digits.startsWith('90');
+
+  if (wantsInternational) {
+    const national = digits.startsWith('90') ? digits.slice(2) : digits;
+    return `+90${national ? ` ${formatNationalPhone(national)}` : ''}`;
+  }
+
+  if (digits.startsWith('0')) {
+    return `0${digits.length > 1 ? ` ${formatNationalPhone(digits.slice(1))}` : ''}`;
+  }
+
+  return formatNationalPhone(digits);
+}
+
+function loadGoogleMaps() {
+  if (!GOOGLE_MAPS_API_KEY) return Promise.resolve(null);
+  if (window.google?.maps?.places) return Promise.resolve(window.google);
+  if (googleMapsLoadPromise) return googleMapsLoadPromise;
+
+  googleMapsLoadPromise = new Promise((resolve, reject) => {
+    const cbName = `__dainoMapsReady_${Date.now()}`;
+    const script = document.createElement('script');
+    window[cbName] = () => {
+      delete window[cbName];
+      resolve(window.google);
+    };
+    script.onerror = () => {
+      delete window[cbName];
+      googleMapsLoadPromise = null;
+      reject(new Error('Google Maps yüklenemedi.'));
+    };
+    const params = new URLSearchParams({
+      key: GOOGLE_MAPS_API_KEY,
+      libraries: 'places',
+      callback: cbName,
+      language: 'tr',
+      region: 'TR',
+    });
+    script.src = `https://maps.googleapis.com/maps/api/js?${params.toString()}`;
+    script.async = true;
+    script.defer = true;
+    document.head.append(script);
+  });
+
+  return googleMapsLoadPromise;
+}
+
+/** @param {any[]} components */
+function findAddressComponent(components, type) {
+  return components.find((c) => Array.isArray(c.types) && c.types.includes(type))?.long_name ?? '';
+}
+
+/** @param {any} place */
+function addressFromGooglePlace(place) {
+  const components = place?.address_components ?? [];
+  const streetNumber = findAddressComponent(components, 'street_number');
+  const route = findAddressComponent(components, 'route');
+  const neighborhood =
+    findAddressComponent(components, 'neighborhood') ||
+    findAddressComponent(components, 'sublocality') ||
+    findAddressComponent(components, 'sublocality_level_1');
+  const district =
+    findAddressComponent(components, 'administrative_area_level_2') ||
+    findAddressComponent(components, 'locality');
+  const city =
+    findAddressComponent(components, 'administrative_area_level_1') ||
+    findAddressComponent(components, 'locality');
+  const line1 =
+    joinPhoneGroups([neighborhood, joinPhoneGroups([route, streetNumber])]) ||
+    place?.formatted_address ||
+    '';
+  const location = place?.geometry?.location;
+
+  return {
+    line1,
+    district,
+    city,
+    formattedAddress: place?.formatted_address || '',
+    placeId: place?.place_id || '',
+    lat: typeof location?.lat === 'function' ? location.lat() : undefined,
+    lng: typeof location?.lng === 'function' ? location.lng() : undefined,
+  };
 }
 
 /** @param {{ status: string }} o */
@@ -738,8 +876,8 @@ function renderAccountNav(me) {
     { id: 'adreslerim', label: 'Adreslerim' },
     { id: 'siparislerim', label: 'Siparişlerim' },
   ];
-  const locked = webCustomerProfileLocked(me);
-  const shown = locked ? tabs.filter((t) => t.id === 'hesabim' || t.id === 'profilim') : tabs;
+  const locked = webCustomerAccountLocked(me);
+  const shown = locked ? tabs.filter((t) => t.id === 'hesabim') : tabs;
   return el(
     'nav',
     { class: 'c-account-nav', 'aria-label': 'Hesap bölümleri' },
@@ -863,6 +1001,195 @@ function renderAccountProfilim(panel, me) {
 
 /**
  * @param {HTMLElement} panel
+ * @param {{ buttonLabel?: string, onSaved?: () => void }} [opts]
+ */
+function appendAddressForm(panel, opts = {}) {
+  const err = el('p', { class: 'c-error' });
+  /** @type {{ formattedAddress?: string, placeId?: string, lat?: number, lng?: number } | null} */
+  let selectedLocation = null;
+  let mapSelectionRequired = false;
+  const label = el('input', {
+    class: 'c-input',
+    placeholder: 'Etiket (örn. Ev)',
+    autocomplete: 'address-line1',
+  });
+  const line1 = el('input', {
+    class: 'c-input',
+    placeholder: 'Adres satırı',
+    autocomplete: 'street-address',
+  });
+  const district = el('input', {
+    class: 'c-input',
+    placeholder: 'İlçe',
+    autocomplete: 'address-level2',
+  });
+  const city = el('input', {
+    class: 'c-input',
+    placeholder: 'Şehir',
+    autocomplete: 'address-level1',
+  });
+  const mapSearch = el('input', {
+    class: 'c-input c-map-search',
+    placeholder: 'Konum ara (örn. mahalle, sokak, bina)',
+    autocomplete: 'off',
+  });
+  const mapCanvas = el('div', { class: 'c-map-canvas', 'aria-label': 'Adres konumu haritası' });
+  const mapStatus = el('p', {
+    class: 'c-muted c-map-status',
+    text: GOOGLE_MAPS_API_KEY
+      ? 'Harita yükleniyor...'
+      : 'Google Maps API anahtarı tanımlı değil; adresi manuel girebilirsiniz.',
+  });
+  if (!GOOGLE_MAPS_API_KEY) {
+    /** @type {HTMLInputElement} */ (mapSearch).disabled = true;
+    mapSearch.style.display = 'none';
+    mapCanvas.style.display = 'none';
+  }
+
+  function applyPickedAddress(picked) {
+    selectedLocation = {
+      formattedAddress: picked.formattedAddress,
+      placeId: picked.placeId,
+      lat: picked.lat,
+      lng: picked.lng,
+    };
+    if (picked.line1) /** @type {HTMLInputElement} */ (line1).value = picked.line1;
+    if (picked.district) /** @type {HTMLInputElement} */ (district).value = picked.district;
+    if (picked.city) /** @type {HTMLInputElement} */ (city).value = picked.city;
+    mapStatus.textContent = picked.formattedAddress
+      ? `Seçilen konum: ${picked.formattedAddress}`
+      : 'Konum seçildi.';
+  }
+
+  function initAddressMap() {
+    if (!GOOGLE_MAPS_API_KEY) return;
+
+    loadGoogleMaps()
+      .then((google) => {
+        if (!google) return;
+        mapSelectionRequired = true;
+        const defaultCenter = { lat: 41.0082, lng: 28.9784 };
+        const map = new google.maps.Map(mapCanvas, {
+          center: defaultCenter,
+          zoom: 12,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+        });
+        const marker = new google.maps.Marker({
+          map,
+          position: defaultCenter,
+          draggable: true,
+        });
+        const geocoder = new google.maps.Geocoder();
+        const autocomplete = new google.maps.places.Autocomplete(mapSearch, {
+          componentRestrictions: { country: 'tr' },
+          fields: ['address_components', 'formatted_address', 'geometry', 'place_id'],
+        });
+
+        function reversePick(latLng) {
+          marker.setPosition(latLng);
+          map.panTo(latLng);
+          geocoder.geocode({ location: latLng }, (results, status) => {
+            if (status === 'OK' && results?.[0]) {
+              applyPickedAddress(addressFromGooglePlace(results[0]));
+            } else {
+              selectedLocation = {
+                lat: typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat,
+                lng: typeof latLng.lng === 'function' ? latLng.lng() : latLng.lng,
+              };
+              mapStatus.textContent = 'Konum seçildi; adres satırını manuel tamamlayın.';
+            }
+          });
+        }
+
+        autocomplete.addListener('place_changed', () => {
+          const place = autocomplete.getPlace();
+          const location = place?.geometry?.location;
+          if (!location) {
+            mapStatus.textContent = 'Konum bulunamadı, lütfen daha net bir adres arayın.';
+            return;
+          }
+          map.setCenter(location);
+          map.setZoom(16);
+          marker.setPosition(location);
+          applyPickedAddress(addressFromGooglePlace(place));
+        });
+        map.addListener('click', (event) => {
+          if (event.latLng) reversePick(event.latLng);
+        });
+        marker.addListener('dragend', (event) => {
+          if (event.latLng) reversePick(event.latLng);
+        });
+        mapStatus.textContent = 'Adresinizi arayın veya haritada pini teslimat noktasına taşıyın.';
+      })
+      .catch(() => {
+        mapSelectionRequired = false;
+        mapStatus.textContent = 'Harita yüklenemedi; adresi manuel girebilirsiniz.';
+      });
+  }
+
+  panel.append(
+    el('label', { class: 'c-label', text: 'Haritadan konum seç' }),
+    mapSearch,
+    mapCanvas,
+    mapStatus,
+    el('label', { class: 'c-label', text: 'Adres adı' }),
+    label,
+    el('label', { class: 'c-label', text: 'Adres' }),
+    line1,
+    el('label', { class: 'c-label', text: 'İlçe' }),
+    district,
+    el('label', { class: 'c-label', text: 'Şehir' }),
+    city,
+    err,
+    el(
+      'button',
+      {
+        class: 'c-btn',
+        onclick: async () => {
+          err.textContent = '';
+          const payload = {
+            label: /** @type {HTMLInputElement} */ (label).value.trim(),
+            line1: /** @type {HTMLInputElement} */ (line1).value.trim(),
+            district: /** @type {HTMLInputElement} */ (district).value.trim(),
+            city: /** @type {HTMLInputElement} */ (city).value.trim(),
+            formattedAddress: selectedLocation?.formattedAddress,
+            placeId: selectedLocation?.placeId,
+            lat: selectedLocation?.lat,
+            lng: selectedLocation?.lng,
+          };
+          if (payload.label.length < 2 || payload.line1.length < 5 || payload.city.length < 2) {
+            err.textContent = 'Adres adı, adres satırı ve şehir alanlarını eksiksiz girin.';
+            return;
+          }
+          if (mapSelectionRequired && (payload.lat === undefined || payload.lng === undefined)) {
+            err.textContent = 'Lütfen haritadan teslimat konumunu seçin.';
+            return;
+          }
+          try {
+            await api('/users/addresses', {
+              method: 'POST',
+              body: JSON.stringify(payload),
+            });
+            if (opts.onSaved) opts.onSaved();
+            else {
+              setRoute('account', 'adreslerim');
+              render();
+            }
+          } catch (e) {
+            err.textContent = e.message || 'Adres eklenemedi';
+          }
+        },
+      },
+      [opts.buttonLabel || 'Adres kaydet'],
+    ),
+  );
+  initAddressMap();
+}
+
+/**
+ * @param {HTMLElement} panel
  * @param {any} me
  */
 function renderAccountAdreslerim(panel, me) {
@@ -913,43 +1240,7 @@ function renderAccountAdreslerim(panel, me) {
       text: 'Yeni adres',
     }),
   );
-  const label = el('input', {
-    class: 'c-input',
-    placeholder: 'Etiket (örn. Ev)',
-  });
-  const line1 = el('input', {
-    class: 'c-input',
-    placeholder: 'Adres satırı',
-  });
-  const district = el('input', { class: 'c-input', placeholder: 'İlçe' });
-  const city = el('input', { class: 'c-input', placeholder: 'Şehir' });
-  panel.append(label, line1, district, city);
-  panel.append(
-    el(
-      'button',
-      {
-        class: 'c-btn',
-        onclick: async () => {
-          try {
-            await api('/users/addresses', {
-              method: 'POST',
-              body: JSON.stringify({
-                label: label.value,
-                line1: line1.value,
-                district: district.value,
-                city: city.value,
-              }),
-            });
-            setRoute('account', 'adreslerim');
-            render();
-          } catch (e) {
-            alert(e.message || 'Adres eklenemedi');
-          }
-        },
-      },
-      ['Adres kaydet'],
-    ),
-  );
+  appendAddressForm(panel);
 }
 
 /**
@@ -1029,6 +1320,117 @@ function renderAccountSiparislerim(panel, me) {
 }
 
 /**
+ * @param {HTMLElement} root
+ * @param {any} me
+ */
+function renderAccountCompletionFlow(root, me) {
+  const needsProfile = !customerProfileComplete(me);
+  const needsAddress = !customerHasAddress(me);
+  const shell = el('div', { class: 'c-complete-shell' });
+  const panel = el('div', { class: 'c-complete-panel' });
+
+  shell.append(
+    el('p', { class: 'c-auth-eyebrow', text: 'Hesap kurulumu' }),
+    el('h2', { class: 'c-section-title c-complete-title', text: 'Siparişe hazır olmanız için son adımlar' }),
+    el('p', {
+      class: 'c-muted c-complete-lead',
+      text: 'Web siparişlerinde teslimatı doğru hazırlayabilmemiz için isim, soyisim ve en az bir teslimat adresi gerekiyor.',
+    }),
+    el('div', { class: 'c-complete-steps', 'aria-label': 'Tamamlama adımları' }, [
+      el('span', {
+        class: needsProfile ? 'c-complete-step c-complete-step--active' : 'c-complete-step',
+        text: customerProfileComplete(me) ? 'Profil tamam' : '1. Profil',
+      }),
+      el('span', {
+        class: !needsProfile && needsAddress
+          ? 'c-complete-step c-complete-step--active'
+          : 'c-complete-step',
+        text: customerHasAddress(me) ? 'Adres tamam' : '2. Adres',
+      }),
+    ]),
+    panel,
+    el(
+      'button',
+      {
+        class: 'c-link c-complete-logout',
+        onclick: () => {
+          setToken(null);
+          render();
+        },
+      },
+      ['Çıkış yap'],
+    ),
+  );
+  root.append(shell);
+
+  if (needsProfile) {
+    const err = el('p', { class: 'c-error' });
+    const fn = el('input', {
+      class: 'c-input',
+      placeholder: 'İsim',
+      value: me.firstName ?? '',
+      autocomplete: 'given-name',
+    });
+    const ln = el('input', {
+      class: 'c-input',
+      placeholder: 'Soyisim',
+      value: me.lastName ?? '',
+      autocomplete: 'family-name',
+    });
+    panel.append(
+      el('h3', { class: 'c-cat-name', text: 'Önce adınızı tamamlayın' }),
+      el('label', { class: 'c-label', text: 'İsim' }),
+      fn,
+      el('label', { class: 'c-label', text: 'Soyisim' }),
+      ln,
+      err,
+      el(
+        'button',
+        {
+          class: 'c-btn',
+          onclick: async () => {
+            err.textContent = '';
+            const firstName = /** @type {HTMLInputElement} */ (fn).value.trim();
+            const lastName = /** @type {HTMLInputElement} */ (ln).value.trim();
+            if (firstName.length < 2 || lastName.length < 2) {
+              err.textContent = 'İsim ve soyisim en az 2 karakter olmalı.';
+              return;
+            }
+            try {
+              await api('/users/me', {
+                method: 'PATCH',
+                body: JSON.stringify({ firstName, lastName }),
+              });
+              render();
+            } catch (e) {
+              err.textContent = e.message || 'Kaydedilemedi';
+            }
+          },
+        },
+        [needsAddress ? 'Kaydet ve adrese geç' : 'Kaydet'],
+      ),
+    );
+    fn.focus();
+    return;
+  }
+
+  if (needsAddress) {
+    panel.append(
+      el('h3', { class: 'c-cat-name', text: 'İlk teslimat adresinizi ekleyin' }),
+      el('p', {
+        class: 'c-muted',
+        style: 'margin-top:-4px;margin-bottom:12px;line-height:1.45',
+        text: 'Daha sonra Hesap > Adreslerim bölümünden yeni adres ekleyebilir veya silebilirsiniz.',
+      }),
+    );
+    appendAddressForm(panel, {
+      buttonLabel: 'Adresi kaydet ve tamamla',
+      onSaved: () => setRoute('account', 'hesabim'),
+    });
+  }
+}
+
+/**
  * Phone OTP girişi — hesap sayfasında ortalanmış kart içinde (modal yok).
  * @param {HTMLElement} container
  * @param {{ onSuccess?: () => void }} [opts]
@@ -1036,112 +1438,259 @@ function renderAccountSiparislerim(panel, me) {
 function mountCustomerPhoneAuth(container, opts = {}) {
   const onSuccess = opts.onSuccess || (() => render().catch(console.error));
   let phone = '';
+  let resendAvailableAt = 0;
+  /** @type {number | undefined} */
+  let resendTimer;
 
-  function viewPhone() {
+  const RESEND_WAIT_SECONDS = 30;
+  const brandLogoStyle = `mask-image:url("${geyikBrandUrl}");-webkit-mask-image:url("${geyikBrandUrl}")`;
+
+  function clearResendTimer() {
+    if (resendTimer) {
+      window.clearInterval(resendTimer);
+      resendTimer = undefined;
+    }
+  }
+
+  /**
+   * @param {string} eyebrow
+   * @param {string} title
+   * @param {string} lead
+   * @param {(HTMLElement | string | null)[]} children
+   */
+  function renderAuthShell(eyebrow, title, lead, children) {
     container.innerHTML = '';
-    const err = el('p', { class: 'c-error c-auth-err' });
     container.append(
-      el('h2', { text: 'Giriş' }),
-      el('p', {
-        class: 'c-muted',
-        text: 'Türk cep: 5xx…, 05xx…, 90… veya +90… (boşluk/tire olabilir).',
-      }),
-      el('input', {
-        class: 'c-input c-auth-input-phone',
-        placeholder: 'örn. 5551112233 veya 0555…',
-        type: 'tel',
-        autocomplete: 'tel',
-      }),
-      err,
-      el(
-        'button',
-        {
-          type: 'button',
-          class: 'c-btn',
-          onclick: async () => {
-            const inp = /** @type {HTMLInputElement | null} */ (
-              container.querySelector('.c-auth-input-phone')
-            );
-            phone = (inp?.value ?? '').trim();
-            err.textContent = '';
-            try {
-              await api('/auth/otp/request', {
-                method: 'POST',
-                body: JSON.stringify({ phone }),
-              });
-              viewCode();
-            } catch (e) {
-              err.textContent = /** @type {Error} */ (e).message;
-            }
-          },
-        },
-        ['Kod gönder'],
-      ),
-      el(
-        'button',
-        {
-          type: 'button',
-          class: 'c-link',
-          style: 'margin-top:12px',
-          onclick: () => setRoute('menu'),
-        },
-        ['Ürünlere dön'],
-      ),
+      el('div', { class: 'c-auth-card__glow', 'aria-hidden': 'true' }),
+      el('div', { class: 'c-auth-brandmark', 'aria-hidden': 'true' }, [
+        el('span', { class: 'c-brand-logo', style: brandLogoStyle }),
+      ]),
+      el('p', { class: 'c-auth-eyebrow', text: eyebrow }),
+      el('h2', { class: 'c-auth-title', text: title }),
+      el('p', { class: 'c-auth-lead', text: lead }),
+      ...children,
     );
   }
 
-  function viewCode() {
-    container.innerHTML = '';
-    const err2 = el('p', { class: 'c-error c-auth-err' });
-    container.append(
-      el('h2', { text: 'SMS kodu' }),
-      el('p', {
-        class: 'c-muted',
-        style: 'margin-bottom:8px',
-        text: 'Hesap telefon numaranızla oluşturulur. İsim ve soyisim, girişten sonra Hesap > Profilim’den zorunludur (web siparişi için).',
-      }),
-      el('input', {
-        class: 'c-input c-auth-input-code',
-        placeholder: '6 haneli kod',
-        maxlength: '6',
-        inputmode: 'numeric',
-        autocomplete: 'one-time-code',
-      }),
-      err2,
-      el(
-        'button',
-        {
-          type: 'button',
-          class: 'c-btn',
-          onclick: async () => {
-            const codeInp = /** @type {HTMLInputElement | null} */ (
-              container.querySelector('.c-auth-input-code')
-            );
-            const code = (codeInp?.value ?? '').trim();
-            err2.textContent = '';
-            try {
-              const { accessToken, refreshToken } = await api('/auth/otp/verify', {
-                method: 'POST',
-                body: JSON.stringify({
-                  phone,
-                  code,
-                }),
-              });
-              setToken(accessToken, refreshToken);
-              onSuccess();
-            } catch (e) {
-              err2.textContent = /** @type {Error} */ (e).message;
-            }
-          },
-        },
-        ['Doğrula'],
-      ),
-      el(
-        'button',
-        { type: 'button', class: 'c-link', onclick: viewPhone },
-        ['Telefonu değiştir'],
-      ),
+  async function requestCode(phoneValue) {
+    await api('/auth/otp/request', {
+      method: 'POST',
+      body: JSON.stringify({ phone: phoneValue }),
+    });
+    resendAvailableAt = Date.now() + RESEND_WAIT_SECONDS * 1000;
+  }
+
+  function viewPhone() {
+    clearResendTimer();
+    const err = el('p', { class: 'c-error c-auth-err' });
+    const phoneInput = el('input', {
+      class: 'c-input c-auth-input c-auth-input-phone',
+      placeholder: '5xx xxx xx xx',
+      type: 'tel',
+      autocomplete: 'tel',
+      inputmode: 'tel',
+      value: formatCustomerPhoneInput(phone),
+      oninput: (event) => {
+        const input = /** @type {HTMLInputElement} */ (event.currentTarget);
+        input.value = formatCustomerPhoneInput(input.value);
+      },
+    });
+    const submitBtn = el(
+      'button',
+      {
+        type: 'submit',
+        class: 'c-btn c-auth-primary',
+      },
+      ['Kodu gönder'],
     );
+    const form = el(
+      'form',
+      {
+        class: 'c-auth-form',
+        onsubmit: async (event) => {
+          event.preventDefault();
+          const normalizedPhone = normalizeCustomerPhone(
+            /** @type {HTMLInputElement} */ (phoneInput).value,
+          );
+          err.textContent = '';
+
+          if (!normalizedPhone) {
+            err.textContent = 'Lütfen geçerli bir cep telefonu girin: 5xx xxx xx xx.';
+            return;
+          }
+
+          phone = normalizedPhone;
+          submitBtn.disabled = true;
+          submitBtn.textContent = 'Kod gönderiliyor...';
+          try {
+            await requestCode(phone);
+            viewCode();
+          } catch (e) {
+            err.textContent = /** @type {Error} */ (e).message;
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Kodu gönder';
+          }
+        },
+      },
+      [
+        el('label', { class: 'c-auth-label', for: 'customer-phone', text: 'Telefon numarası' }),
+        phoneInput,
+        err,
+        submitBtn,
+        el('p', {
+          class: 'c-auth-note',
+          text: 'Şifre gerekmez. Size tek kullanımlık SMS kodu göndereceğiz.',
+        }),
+      ],
+    );
+    phoneInput.id = 'customer-phone';
+
+    renderAuthShell(
+      'Güvenli müşteri girişi',
+      'Daino hesabınıza giriş yapın',
+      'Siparişlerinizi takip etmek ve web siparişlerinizi tamamlamak için telefon numaranızla devam edin.',
+      [
+        form,
+        el('div', { class: 'c-auth-benefits', 'aria-label': 'Giriş avantajları' }, [
+          el('span', { text: 'SMS ile hızlı giriş' }),
+          el('span', { text: 'Sipariş geçmişi' }),
+        ]),
+      ],
+    );
+    phoneInput.focus();
+  }
+
+  function viewCode() {
+    clearResendTimer();
+    const err2 = el('p', { class: 'c-error c-auth-err' });
+    const status = el('p', { class: 'c-auth-note c-auth-resend-status' });
+    const codeInput = el('input', {
+      class: 'c-input c-auth-input c-auth-input-code',
+      placeholder: '6 haneli kod',
+      maxlength: '6',
+      inputmode: 'numeric',
+      autocomplete: 'one-time-code',
+      oninput: (event) => {
+        const input = /** @type {HTMLInputElement} */ (event.currentTarget);
+        input.value = input.value.replace(/\D/g, '').slice(0, 6);
+      },
+    });
+    const verifyBtn = el(
+      'button',
+      {
+        type: 'submit',
+        class: 'c-btn c-auth-primary',
+      },
+      ['Giriş yap'],
+    );
+    const resendBtn = el(
+      'button',
+      {
+        type: 'button',
+        class: 'c-link c-auth-resend',
+        onclick: async () => {
+          if (Date.now() < resendAvailableAt) return;
+
+          err2.textContent = '';
+          resendBtn.disabled = true;
+          resendBtn.textContent = 'Gönderiliyor...';
+          try {
+            await requestCode(phone);
+            status.textContent = 'Yeni kod gönderildi.';
+            updateResendState();
+          } catch (e) {
+            err2.textContent = /** @type {Error} */ (e).message;
+            updateResendState();
+          }
+        },
+      },
+      ['Kodu tekrar gönder'],
+    );
+
+    function updateResendState() {
+      const remaining = Math.max(0, Math.ceil((resendAvailableAt - Date.now()) / 1000));
+      if (remaining > 0) {
+        resendBtn.disabled = true;
+        resendBtn.textContent = `Tekrar gönder (${remaining} sn)`;
+        if (!status.textContent || status.textContent === 'Yeni kod gönderildi.') {
+          status.textContent = `Kod gelmediyse ${remaining} saniye sonra tekrar gönderebilirsiniz.`;
+        }
+        return;
+      }
+
+      resendBtn.disabled = false;
+      resendBtn.textContent = 'Kodu tekrar gönder';
+      status.textContent = 'Kod gelmediyse yeniden SMS gönderebilirsiniz.';
+      clearResendTimer();
+    }
+
+    const form = el(
+      'form',
+      {
+        class: 'c-auth-form',
+        onsubmit: async (event) => {
+          event.preventDefault();
+          const code = (/** @type {HTMLInputElement} */ (codeInput).value ?? '').trim();
+          err2.textContent = '';
+
+          if (!/^\d{6}$/.test(code)) {
+            err2.textContent = 'Lütfen 6 haneli SMS kodunu girin.';
+            return;
+          }
+
+          verifyBtn.disabled = true;
+          verifyBtn.textContent = 'Kontrol ediliyor...';
+          try {
+            const { accessToken, refreshToken } = await api('/auth/otp/verify', {
+              method: 'POST',
+              body: JSON.stringify({
+                phone,
+                code,
+              }),
+            });
+            clearResendTimer();
+            setToken(accessToken, refreshToken);
+            onSuccess();
+          } catch (e) {
+            err2.textContent = /** @type {Error} */ (e).message;
+            verifyBtn.disabled = false;
+            verifyBtn.textContent = 'Giriş yap';
+          }
+        },
+      },
+      [
+        el('div', { class: 'c-auth-phone-row' }, [
+          el('span', { text: formatCustomerPhoneInput(phone) }),
+          el(
+            'button',
+            { type: 'button', class: 'c-link', onclick: viewPhone },
+            ['Değiştir'],
+          ),
+        ]),
+        el('label', { class: 'c-auth-label', for: 'customer-code', text: 'SMS kodu' }),
+        codeInput,
+        err2,
+        verifyBtn,
+      ],
+    );
+    codeInput.id = 'customer-code';
+
+    renderAuthShell(
+      'Telefon doğrulama',
+      'SMS kodunu girin',
+      'Size gönderdiğimiz tek kullanımlık kodla hesabınıza güvenli şekilde giriş yapabilirsiniz.',
+      [
+        form,
+        el('div', { class: 'c-auth-secondary-row' }, [
+          status,
+          resendBtn,
+        ]),
+      ],
+    );
+
+    updateResendState();
+    resendTimer = window.setInterval(updateResendState, 1000);
+    codeInput.focus();
   }
 
   viewPhone();
@@ -1154,7 +1703,7 @@ function mountCustomerPhoneAuth(container, opts = {}) {
 function renderAccount(root, precookedMe) {
   const tok = getToken() || getRefreshToken();
   if (!tok) {
-    const card = el('div', { class: 'c-modal c-auth-card' });
+    const card = el('div', { class: 'c-auth-card' });
     mountCustomerPhoneAuth(card, { onSuccess: () => render().catch(console.error) });
     root.append(
       el('div', { class: 'c-auth-page' }, [card]),
@@ -1163,6 +1712,10 @@ function renderAccount(root, precookedMe) {
   }
   const apply = (me) => {
     root.innerHTML = '';
+    if (webCustomerAccountLocked(me)) {
+      renderAccountCompletionFlow(root, me);
+      return;
+    }
     const shell = el('div', { class: 'c-account-shell c-stack' });
     shell.append(
       el('h2', {
@@ -1249,11 +1802,11 @@ function renderCart(root, me) {
   const canOrderTable =
     isTable && !noTable && !storefront && !serviceOff && tableMeta?.found;
   const canOrderOnline = !isTable;
-  const webProfileBlock =
+  const webAccountBlock =
     !isTable &&
     !!tok &&
     me?.role === 'CUSTOMER' &&
-    !customerProfileComplete(me);
+    !customerAccountComplete(me);
 
   root.append(
     el('div', { class: 'c-row', style: 'margin-top:16px' }, [
@@ -1262,7 +1815,7 @@ function renderCart(root, me) {
         'button',
         {
           class: 'c-btn',
-          disabled: isTable ? !canOrderTable : !tok || !canOrderOnline || webProfileBlock,
+          disabled: isTable ? !canOrderTable : !tok || !canOrderOnline || webAccountBlock,
           onclick: () => submitOrder(),
         },
         [isTable ? 'Masaya sipariş ver' : 'Online sipariş ver'],
@@ -1288,12 +1841,12 @@ function renderCart(root, me) {
     );
   }
 
-  if (!isTable && webProfileBlock) {
+  if (!isTable && webAccountBlock) {
     root.append(
       el('p', {
         class: 'c-muted',
         style: 'margin-top:10px',
-        text: 'Web siparişi için önce Hesap > Profilim’den isim ve soyisim girin.',
+        text: 'Web siparişi için önce hesap bilgilerinizi ve teslimat adresinizi tamamlayın.',
       }),
     );
   }
@@ -1337,15 +1890,9 @@ async function submitOrder() {
         return;
       }
       const me = await api('/users/me');
-      if (!customerProfileComplete(me)) {
-        alert('Önce Hesap > Profilim bölümünden isim ve soyisim girin.');
-        setRoute('account', 'profilim');
-        render();
-        return;
-      }
-      if (!me.addresses?.length) {
-        alert('Önce hesabınızdan adres ekleyin.');
-        setRoute('account', 'adreslerim');
+      if (!customerAccountComplete(me)) {
+        alert('Önce hesap bilgilerinizi ve teslimat adresinizi tamamlayın.');
+        setRoute('account', 'hesabim');
         render();
         return;
       }
@@ -1366,61 +1913,70 @@ async function submitOrder() {
   }
 }
 
-/** @param {string} innerSvg path/circle elements only */
-function customerTopbarSvg(innerSvg) {
-  const template = document.createElement('template');
-  template.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${innerSvg}</svg>`;
-  const svg = template.content.firstElementChild;
-  return /** @type {SVGElement} */ (svg);
+/** @param {string} name */
+function phosphorIcon(name) {
+  return el('i', {
+    class: `ph ph-${name} c-icon`,
+    'aria-hidden': 'true',
+  });
+}
+
+function topbarChannelLabel() {
+  if (!tableSlug) return 'Web';
+  if (tableMeta?.found === false) return 'Masa';
+
+  const number = Number(tableMeta?.number);
+  if (!Number.isFinite(number)) return 'Masa';
+  return number === 0 ? 'Menü' : `Masa ${number}`;
 }
 
 function renderTopbar(me) {
-  parseRoute();
-  const lock = webCustomerProfileLocked(me);
+  const route = parseRoute();
+  const lock = webCustomerAccountLocked(me);
   const goMenu = () => {
     if (lock) {
-      setRoute('account', 'profilim');
+      setRoute('account', 'hesabim');
       return;
     }
     setRoute('menu');
   };
   const goCart = () => {
     if (lock) {
-      setRoute('account', 'profilim');
+      setRoute('account', 'hesabim');
       return;
     }
     setRoute('cart');
   };
   const goAccount = () => setRoute('account', 'hesabim');
   const hasSession = !!(getToken() || getRefreshToken());
+  const isLoginScreen = route === 'account' && !hasSession;
   const nCart = cartCount();
   const cartLabel = tableSlug
     ? `Özet${nCart ? `, ${nCart} ürün` : ''}`
     : `Sepet${nCart ? `, ${nCart} ürün` : ''}`;
-  const cartIcon = customerTopbarSvg(
-    '<circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>',
-  );
-  const profileIcon = customerTopbarSvg('<path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>');
+  const channelLabel = topbarChannelLabel();
   const profileBtn = hasSession
     ? el(
         'button',
         {
           type: 'button',
-          class: 'c-btn c-btn--ghost c-btn--sm',
+          class: 'c-btn c-btn--ghost c-topbar-iconbtn',
           'aria-label': 'Hesap',
+          title: 'Hesap',
           onclick: goAccount,
         },
-        [profileIcon],
+        [phosphorIcon('user-circle')],
       )
     : el(
         'button',
         {
           type: 'button',
-          class: 'c-btn c-btn--ghost c-btn--sm',
+          class: 'c-btn c-btn--ghost c-topbar-iconbtn',
           'aria-label': 'Giriş yap',
+          title: 'Giriş yap',
           onclick: goAccount,
         },
-        ['Giriş Yap'],
+        [phosphorIcon('sign-in')],
       );
   const brandLogoStyle = `mask-image:url("${geyikBrandUrl}");-webkit-mask-image:url("${geyikBrandUrl}")`;
   return el('header', { class: 'c-topbar' }, [
@@ -1440,26 +1996,32 @@ function renderTopbar(me) {
       ],
     ),
     el('div', { class: 'c-topbar-actions' }, [
-      tableSlug
-        ? el('span', { class: 'c-badge', text: 'Masa' })
-        : el('span', { class: 'c-badge', text: 'Web' }),
-      el(
-        'button',
-        { type: 'button', class: 'c-btn c-btn--ghost c-btn--sm', onclick: goMenu },
-        ['Ürünler'],
-      ),
-      profileBtn,
+      el('span', { class: 'c-badge', text: channelLabel }),
+      route === 'menu' || isLoginScreen
+        ? null
+        : el(
+            'button',
+            {
+              type: 'button',
+              class: 'c-btn c-btn--ghost c-topbar-iconbtn',
+              'aria-label': 'Ürünler',
+              title: 'Ürünler',
+              onclick: goMenu,
+            },
+            [phosphorIcon('list-bullets')],
+          ),
+      isLoginScreen ? null : profileBtn,
       el(
         'button',
         {
           type: 'button',
-          class: 'c-btn c-btn--ghost c-btn--sm c-topbar-cartbtn',
+          class: 'c-btn c-btn--ghost c-topbar-iconbtn c-topbar-cartbtn',
           'aria-label': cartLabel,
           title: cartLabel,
           onclick: goCart,
         },
         [
-          cartIcon,
+          phosphorIcon(tableSlug ? 'receipt' : 'shopping-cart-simple'),
           nCart > 0
             ? el('span', { class: 'c-topbar-badge', text: nCart > 99 ? '99+' : String(nCart) })
             : null,
@@ -1471,10 +2033,10 @@ function renderTopbar(me) {
 
 function renderCartBar(me) {
   if (parseRoute() === 'cart') return null;
-  if (webCustomerProfileLocked(me)) return null;
+  if (webCustomerAccountLocked(me)) return null;
   if (!cart.length) return null;
   const isTable = !!tableSlug;
-  const lock = webCustomerProfileLocked(me);
+  const lock = webCustomerAccountLocked(me);
   return el('div', { class: 'c-cart-bar' }, [
     el('span', { class: 'c-cart-total', text: formatTry(cartTotal()) }),
     el(
@@ -1483,7 +2045,7 @@ function renderCartBar(me) {
         class: 'c-btn c-btn--sm',
         onclick: () => {
           if (lock) {
-            setRoute('account', 'profilim');
+            setRoute('account', 'hesabim');
             return;
           }
           setRoute('cart');
@@ -1511,19 +2073,18 @@ async function render() {
   const webIncomplete =
     !tableSlug &&
     meSnapshot?.role === 'CUSTOMER' &&
-    !customerProfileComplete(meSnapshot);
+    !customerAccountComplete(meSnapshot);
   if (webIncomplete) {
     if (route === 'menu' || route === 'cart') {
-      accountTab = 'profilim';
-      history.replaceState({}, '', accountPath('profilim'));
+      accountTab = 'hesabim';
+      history.replaceState({}, '', accountPath('hesabim'));
       route = 'account';
     } else if (
       route === 'account' &&
-      accountTab !== 'profilim' &&
       accountTab !== 'hesabim'
     ) {
-      accountTab = 'profilim';
-      history.replaceState({}, '', accountPath('profilim'));
+      accountTab = 'hesabim';
+      history.replaceState({}, '', accountPath('hesabim'));
     }
   }
 
