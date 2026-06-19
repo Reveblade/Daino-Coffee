@@ -28,6 +28,18 @@ export class UserAddress {
 
   @Prop({ default: 'Türkiye' })
   country?: string;
+
+  @Prop()
+  formattedAddress?: string;
+
+  @Prop()
+  placeId?: string;
+
+  @Prop()
+  lat?: number;
+
+  @Prop()
+  lng?: number;
 }
 
 const UserAddressSchema = SchemaFactory.createForClass(UserAddress);

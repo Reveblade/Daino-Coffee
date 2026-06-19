@@ -86,6 +86,18 @@ export class AddressSnapshot {
 
   @Prop({ default: 'Türkiye' })
   country?: string;
+
+  @Prop()
+  formattedAddress?: string;
+
+  @Prop()
+  placeId?: string;
+
+  @Prop()
+  lat?: number;
+
+  @Prop()
+  lng?: number;
 }
 
 const AddressSnapshotSchema = SchemaFactory.createForClass(AddressSnapshot);

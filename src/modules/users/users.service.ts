@@ -1,5 +1,6 @@
 import {
   Injectable,
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   NotFoundException,
@@ -35,10 +36,38 @@ export class UsersService {
     return fn >= 2 && ln >= 2;
   }
 
+  isCustomerAddressComplete(user: UserDocument): boolean {
+    if (user.role !== UserRole.CUSTOMER) {
+      return true;
+    }
+    return user.addresses.some(
+      (address) =>
+        address.label?.trim().length >= 2 &&
+        address.line1?.trim().length >= 5 &&
+        address.city?.trim().length >= 2,
+    );
+  }
+
+  isCustomerAccountComplete(user: UserDocument): boolean {
+    return (
+      this.isCustomerProfileComplete(user) &&
+      this.isCustomerAddressComplete(user)
+    );
+  }
+
   assertCustomerProfileComplete(user: UserDocument): void {
     if (!this.isCustomerProfileComplete(user)) {
       throw new ForbiddenException(
         'Bu işlem için önce Profilim bölümünden isim ve soyisminizi girin (en az 2 karakter).',
+      );
+    }
+  }
+
+  assertCustomerAccountComplete(user: UserDocument): void {
+    this.assertCustomerProfileComplete(user);
+    if (!this.isCustomerAddressComplete(user)) {
+      throw new ForbiddenException(
+        'Bu işlem için önce hesabınıza en az bir teslimat adresi ekleyin.',
       );
     }
   }
@@ -240,6 +269,10 @@ export class UsersService {
       city: string;
       district?: string;
       country?: string;
+      formattedAddress?: string;
+      placeId?: string;
+      lat?: number;
+      lng?: number;
     },
   ) {
     const user = await this.userModel.findById(userId).exec();
@@ -247,13 +280,38 @@ export class UsersService {
       throw new NotFoundException();
     }
     this.assertCustomerProfileComplete(user);
+    const label = body.label.trim();
+    const line1 = body.line1.trim();
+    const line2 = body.line2?.trim();
+    const district = body.district?.trim();
+    const city = body.city.trim();
+    const country = body.country?.trim();
+    const formattedAddress = body.formattedAddress?.trim();
+    const placeId = body.placeId?.trim();
+
+    if (label.length < 2 || line1.length < 5 || city.length < 2) {
+      throw new BadRequestException(
+        'Adres adı, adres satırı ve şehir alanlarını eksiksiz girin.',
+      );
+    }
+    if (
+      (body.lat !== undefined && body.lng === undefined) ||
+      (body.lng !== undefined && body.lat === undefined)
+    ) {
+      throw new BadRequestException('Konum için enlem ve boylam birlikte gönderilmeli.');
+    }
+
     user.addresses.push({
-      label: body.label,
-      line1: body.line1,
-      line2: body.line2,
-      city: body.city,
-      district: body.district,
-      country: body.country ?? 'Türkiye',
+      label,
+      line1,
+      line2: line2 || undefined,
+      city,
+      district: district || undefined,
+      country: country || 'Türkiye',
+      formattedAddress: formattedAddress || undefined,
+      placeId: placeId || undefined,
+      lat: body.lat,
+      lng: body.lng,
     });
     await user.save();
     return user;

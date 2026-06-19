@@ -22,7 +22,16 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from './schemas/user.schema';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
-import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 class UpdateProfileDto {
   @IsOptional()
@@ -40,25 +49,56 @@ class UpdateProfileDto {
 
 class CreateAddressDto {
   @IsString()
+  @MinLength(2)
+  @MaxLength(60)
   label: string;
 
   @IsString()
+  @MinLength(5)
+  @MaxLength(240)
   line1: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(240)
   line2?: string;
 
   @IsString()
+  @MinLength(2)
+  @MaxLength(80)
   city: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(80)
   district?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(80)
   country?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  formattedAddress?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(160)
+  placeId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  lat?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  lng?: number;
 }
 
 class CreateStaffDto {
@@ -113,8 +153,10 @@ export class UsersController {
       lastName: doc.lastName,
       role: doc.role,
       addresses: doc.addresses,
+      hasAddress: this.users.isCustomerAddressComplete(doc),
       favoriteProductIds: doc.favoriteProductIds.map((id) => id.toString()),
       profileComplete: this.users.isCustomerProfileComplete(doc),
+      accountComplete: this.users.isCustomerAccountComplete(doc),
     };
   }
 
@@ -138,8 +180,10 @@ export class UsersController {
       lastName: doc.lastName,
       role: doc.role,
       addresses: doc.addresses,
+      hasAddress: this.users.isCustomerAddressComplete(doc),
       favoriteProductIds: doc.favoriteProductIds.map((id) => id.toString()),
       profileComplete: this.users.isCustomerProfileComplete(doc),
+      accountComplete: this.users.isCustomerAccountComplete(doc),
     };
   }
 

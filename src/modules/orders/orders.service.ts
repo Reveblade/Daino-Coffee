@@ -486,7 +486,7 @@ export class OrdersService {
     if (!user) {
       throw new NotFoundException()
     }
-    this.usersService.assertCustomerProfileComplete(user)
+    this.usersService.assertCustomerAccountComplete(user)
     const addr = user.addresses[body.addressIndex]
     if (!addr) {
       throw new BadRequestException('Invalid address index')
@@ -508,6 +508,10 @@ export class OrdersService {
         city: addr.city,
         district: addr.district,
         country: addr.country,
+        formattedAddress: addr.formattedAddress,
+        placeId: addr.placeId,
+        lat: addr.lat,
+        lng: addr.lng,
       },
       items: lineItems,
       totalKurus: total,
