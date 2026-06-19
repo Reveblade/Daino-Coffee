@@ -26,11 +26,11 @@ import {
 let screen = 'login';
 /** @type {string} */
 let view = 'orders';
-let pollTimer = null;
 /** @type {(() => void) | null} */
 let stopOrdersWs = null;
-/** True while staff orders WebSocket is connected (disables fast HTTP polling). */
-let ordersWsLive = false;
+/** @type {Map<string, { additionCount: number }>} */
+let staffOrderAlertSnapshot = new Map();
+let staffOrderAlertSnapshotReady = false;
 
 /** Geçmiş liste / detay (sayfa yeniden çizilince korunur). */
 let historyUi = {
@@ -39,6 +39,8 @@ let historyUi = {
   page: 0,
   /** @type {string} */
   q: '',
+  /** @type {string} */
+  tableNumber: '',
   pageSize: 20,
 };
 
@@ -63,9 +65,20 @@ let menuUi = {
 };
 
 function channelLabelTr(ch) {
-  if (ch === 'IN_PLACE') return 'Masa (QR)';
-  if (ch === 'ONLINE') return 'Teslimat (web)';
+  if (ch === 'IN_PLACE') return 'Servis';
+  if (ch === 'ONLINE') return 'Kurye';
   return String(ch ?? '');
+}
+
+/** @param {string | null | undefined} r */
+function roleLabelTr(r) {
+  const m = {
+    CASHIER: 'Kasiyer',
+    COURIER: 'Kurye',
+    ADMIN: 'Yönetici',
+    ADMIN_OWNER: 'Sahip',
+  };
+  return m[r] ?? String(r ?? '');
 }
 
 function inPlaceStatusTr(st) {
@@ -184,6 +197,37 @@ function liveOrderItemLineHtml(it) {
   const opt = orderItemOptionSelectionsText(it);
   const optHtml = opt ? `<span class="a-order-card__item-options">${esc(opt)}</span>` : '';
   return `<li><strong>${esc(String(qty))}×</strong><span>${esc(it?.name ?? 'Ürün')}</span>${optHtml}</li>`;
+}
+
+/** @param {object} item */
+function additionItemLineHtml(item) {
+  const qty = Number(item?.quantity) || 0;
+  const opt = item?.optionsLine
+    ? `<span class="a-order-card__item-options">${esc(item.optionsLine)}</span>`
+    : '';
+  return `<li><strong>${esc(String(qty))}×</strong><span>${esc(item?.name ?? 'Ürün')}</span>${opt}</li>`;
+}
+
+/** @param {object} h */
+function additionEntryItemsHtml(h) {
+  const items = h?.metadata?.addedItems;
+  if (!Array.isArray(items) || !items.length) return '';
+  return items.map((item) => additionItemLineHtml(item)).join('');
+}
+
+/** @param {object} o */
+function pendingInPlaceAdditionsHtml(o) {
+  const pending = pendingInPlaceAdditionEntries(o);
+  if (!pending.length) return '';
+  const rows = pending.map((h) => additionEntryItemsHtml(h)).filter(Boolean).join('');
+  if (!rows) return '';
+  return `<section class="a-order-card__pending-additions">
+    <div class="a-order-card__pending-head">
+      <span>Teslim bekleyen ekler</span>
+      <strong>${esc(String(pending.length))} ek</strong>
+    </div>
+    <ul class="a-order-card__item-list">${rows}</ul>
+  </section>`;
 }
 
 /** @param {object} o */
@@ -345,6 +389,54 @@ function orderTimeMs(o, field) {
   return Number.isFinite(t) ? t : 0;
 }
 
+/** @param {object} h */
+function historyTimeMs(h) {
+  const v = h?.at;
+  if (!v) return 0;
+  const t = new Date(v).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** @param {object} o */
+function inPlaceAdditionEntries(o) {
+  if (o?.channel !== 'IN_PLACE' || !Array.isArray(o.history)) return [];
+  return o.history.filter((h) => h?.note === 'IN_PLACE_ITEMS_ADDED');
+}
+
+/** @param {object} o */
+function inPlaceAdditionCount(o) {
+  return inPlaceAdditionEntries(o).length;
+}
+
+/** @param {object} o */
+function orderAttentionTimeMs(o) {
+  const addAt = inPlaceAdditionEntries(o).reduce(
+    (mx, h) => Math.max(mx, historyTimeMs(h)),
+    0,
+  );
+  return Math.max(orderTimeMs(o, 'createdAt'), addAt);
+}
+
+/** @param {object} o */
+function pendingInPlaceAdditionEntries(o) {
+  if (o?.channel !== 'IN_PLACE' || o?.status !== 'IN_PROGRESS') return [];
+  const hist = Array.isArray(o.history) ? o.history : [];
+  let lastDeliveredIdx = -1;
+  hist.forEach((h, idx) => {
+    if (
+      h?.to === 'READY' ||
+      h?.to === 'AWAITING_PAYMENT' ||
+      h?.note === 'READY' ||
+      h?.note === 'AWAIT_PAYMENT'
+    ) {
+      lastDeliveredIdx = idx;
+    }
+  });
+  return hist
+    .slice(lastDeliveredIdx + 1)
+    .filter((h) => h?.note === 'IN_PLACE_ITEMS_ADDED');
+}
+
 /** @param {object} o */
 function staffActionsList(o) {
   return o.channel === 'IN_PLACE'
@@ -354,7 +446,13 @@ function staffActionsList(o) {
 
 /** @param {object} o */
 function canCancelOrder(o) {
-  return staffActionsList(o).some((a) => a.act === 'CANCEL');
+  if (isTerminalOrder(o)) return false;
+  return isAdmin() || staffActionsList(o).some((a) => a.act === 'CANCEL');
+}
+
+/** @param {object} o */
+function canAdminCompleteOrder(o) {
+  return isAdmin() && !isTerminalOrder(o);
 }
 
 /**
@@ -426,9 +524,48 @@ function primaryFlowStep(o) {
 function orderFlowActionsInnerHtml(o) {
   const id = esc(idStr(o));
   const chEsc = esc(o.channel);
-  const bits = [];
+  const flow = [];
+  const admin = [];
+  const step = primaryFlowStep(o);
+  const adminHasComplete = canAdminCompleteOrder(o);
+  if (step?.kind === 'transition' && !(adminHasComplete && step.act === 'MARK_PAID')) {
+    flow.push(
+      buttonHtml({
+        label: step.targetLabel,
+        size: 'compact',
+        icon: 'arrow-right',
+        classes: 'a-act',
+        attrs: { 'data-id': id, 'data-ch': chEsc, 'data-act': step.act },
+      }),
+    );
+  } else if (step?.kind === 'assign') {
+    flow.push(
+      `<select class="a-select a-courier-sel" data-id="${id}" aria-label="Kurye"><option value="">Kurye seç…</option></select>`,
+    );
+    flow.push(
+      buttonHtml({
+        label: step.targetLabel,
+        size: 'compact',
+        icon: 'arrow-right',
+        classes: 'a-assign',
+        attrs: { 'data-id': id },
+      }),
+    );
+  }
+  if (adminHasComplete) {
+    admin.push(
+      buttonHtml({
+        label: 'Tamamla',
+        variant: 'secondary',
+        size: 'compact',
+        icon: 'check-circle',
+        classes: 'a-act',
+        attrs: { 'data-id': id, 'data-ch': chEsc, 'data-act': 'COMPLETE' },
+      }),
+    );
+  }
   if (canCancelOrder(o)) {
-    bits.push(
+    admin.push(
       buttonHtml({
         label: 'İptal',
         variant: 'danger',
@@ -439,32 +576,16 @@ function orderFlowActionsInnerHtml(o) {
       }),
     );
   }
-  const step = primaryFlowStep(o);
-  if (step?.kind === 'transition') {
-    bits.push(
-      buttonHtml({
-        label: step.targetLabel,
-        size: 'compact',
-        icon: 'arrow-right',
-        classes: 'a-act',
-        attrs: { 'data-id': id, 'data-ch': chEsc, 'data-act': step.act },
-      }),
-    );
-  } else if (step?.kind === 'assign') {
-    bits.push(
-      `<select class="a-select a-courier-sel" data-id="${id}" aria-label="Kurye"><option value="">Kurye seç…</option></select>`,
-    );
-    bits.push(
-      buttonHtml({
-        label: step.targetLabel,
-        size: 'compact',
-        icon: 'arrow-right',
-        classes: 'a-assign',
-        attrs: { 'data-id': id },
-      }),
+  const sections = [];
+  if (flow.length) {
+    sections.push(`<div class="a-order-card__flow">${flow.join('')}</div>`);
+  }
+  if (admin.length) {
+    sections.push(
+      `<div class="a-order-card__admin-actions"><span>Hızlı durum</span>${admin.join('')}</div>`,
     );
   }
-  return bits.join('');
+  return sections.join('');
 }
 
 async function fetchOrdersStaff() {
@@ -502,6 +623,36 @@ function formatDateTimeTr(iso) {
   }
 }
 
+/** @param {string} text */
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  ta.remove();
+}
+
+/** @param {string | undefined} iso */
+function formatTimeTr(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleTimeString('tr-TR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '—';
+  }
+}
+
 /** @param {string | undefined} e164 */
 function formatPhoneTrDisplay(e164) {
   if (!e164 || typeof e164 !== 'string') return '';
@@ -523,7 +674,8 @@ function courierSelectDisplayText(c) {
 
 /** @param {object} o @returns {string} */
 function liveOrderCardHtml(o) {
-  const id = esc(idStr(o));
+  const rawId = idStr(o);
+  const id = esc(rawId);
   const shortId = id.length >= 8 ? id.slice(-8) : id;
   const ch = o.channel;
   const chLabel = esc(channelLabelTr(ch));
@@ -536,6 +688,9 @@ function liveOrderCardHtml(o) {
   const itemsSummary = esc(orderItemsSummary(o));
   const itemsHtml = liveOrderItemsHtml(o);
   const deliveryHtml = liveOrderDeliveryHtml(o);
+  const pendingAdditionsHtml = pendingInPlaceAdditionsHtml(o);
+  const createdAt = esc(formatTimeTr(o.createdAt));
+  const total = esc(formatTryFromKurus(o.totalKurus));
   const addDisp = latestInPlaceAdditionDisplay(o);
   const sonEk =
     ch === 'IN_PLACE' && addDisp.text
@@ -544,16 +699,33 @@ function liveOrderCardHtml(o) {
   const actions = orderFlowActionsInnerHtml(o);
   return `<article class="a-order-card">
     <div class="a-order-card__head">
-      <code class="a-order-card__id">${shortId}</code>
-      <span class="a-badge">${chLabel}</span>
+      <div>
+        <span class="a-order-card__eyebrow">Sipariş</span>
+        <div class="a-order-card__code-row">
+          <code class="a-order-card__id">${shortId}</code>
+          ${buttonHtml({
+            label: 'Kopyala',
+            variant: 'ghost',
+            size: 'compact',
+            icon: 'copy',
+            classes: 'a-copy-order-id',
+            attrs: { 'data-copy-order-id': rawId },
+          })}
+        </div>
+      </div>
+      <span class="a-order-card__status" title="${stRaw}">${stLabel}</span>
     </div>
-    <p class="a-order-card__meta"><strong>${masa}</strong></p>
-    <p class="a-order-card__items">${itemsSummary}</p>
+    <div class="a-order-card__meta-grid">
+      <span><small>Kanal</small><strong>${chLabel}</strong></span>
+      <span><small>${ch === 'IN_PLACE' ? 'Masa' : 'Saat'}</small><strong>${ch === 'IN_PLACE' ? masa : createdAt}</strong></span>
+      <span><small>Toplam</small><strong>${total}</strong></span>
+    </div>
+    <p class="a-order-card__items"><strong>${itemsSummary}</strong></p>
     ${itemsHtml}
+    ${pendingAdditionsHtml}
     ${deliveryHtml}
     ${sonEk}
-    <p class="a-order-card__status"><span title="${stRaw}">${stLabel}</span></p>
-    <div class="a-order-card__actions">${actions ? `<div class="a-order-card__flow">${actions}</div>` : '<span class="a-muted">İşlem yok</span>'}</div>
+    <div class="a-order-card__actions">${actions || '<span class="a-muted">İşlem yok</span>'}</div>
   </article>`;
 }
 
@@ -584,19 +756,80 @@ function historyOrderRowHtml(o) {
   return `<tr data-detail="${rawId}"><td><code>${shortId}</code></td><td><span class="a-badge">${chLabel}</span></td><td>${masa}</td><td>${itemsSummary}</td><td><span title="${stRaw}">${stLabel}</span></td><td class="a-muted">${when}</td><td><div class="a-table-actions">${buttonHtml({ label: 'Detay', variant: 'secondary', size: 'compact', icon: 'info', classes: 'a-history-detail-btn', attrs: { 'data-detail': rawId } })}</div></td></tr>`;
 }
 
-function clearPoll() {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-}
-
 function stopOrdersRealtime() {
   if (stopOrdersWs) {
     stopOrdersWs();
     stopOrdersWs = null;
   }
-  ordersWsLive = false;
+}
+
+/** @param {object[]} orders */
+function makeStaffOrderAlertSnapshot(orders) {
+  const next = new Map();
+  orders.filter((o) => !isTerminalOrder(o)).forEach((o) => {
+    next.set(idStr(o), { additionCount: inPlaceAdditionCount(o) });
+  });
+  return next;
+}
+
+/** @param {object[]} orders */
+function rememberStaffOrderAlertSnapshot(orders) {
+  staffOrderAlertSnapshot = makeStaffOrderAlertSnapshot(orders);
+  staffOrderAlertSnapshotReady = true;
+}
+
+function playStaffOrderNotification() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.setValueAtTime(660, ctx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.32);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.34);
+    setTimeout(() => ctx.close().catch(() => {}), 650);
+  } catch {
+    /* Browser may block audio until the panel receives a user gesture. */
+  }
+}
+
+/** @param {object[]} orders */
+function notifyInterestingStaffOrderChanges(orders) {
+  const next = makeStaffOrderAlertSnapshot(orders);
+  if (!staffOrderAlertSnapshotReady) {
+    staffOrderAlertSnapshot = next;
+    staffOrderAlertSnapshotReady = true;
+    return;
+  }
+  let hasNewOrder = false;
+  let hasAddition = false;
+  for (const [id, cur] of next.entries()) {
+    const prev = staffOrderAlertSnapshot.get(id);
+    if (!prev) {
+      hasNewOrder = true;
+      continue;
+    }
+    if (cur.additionCount > prev.additionCount) {
+      hasAddition = true;
+    }
+  }
+  staffOrderAlertSnapshot = next;
+  if (!hasNewOrder && !hasAddition) return;
+  playStaffOrderNotification();
+  const msg = hasNewOrder && hasAddition
+    ? 'Yeni sipariş ve masa eki geldi.'
+    : hasNewOrder
+      ? 'Yeni sipariş geldi.'
+      : 'Masaya yeni ek geldi.';
+  showToast(msg, 'success');
 }
 
 function applyView(nextView) {
@@ -610,16 +843,6 @@ function applyView(nextView) {
     });
   }
   renderMain().catch(console.error);
-}
-
-function startPoll() {
-  clearPoll();
-  if (screen !== 'app') return;
-  pollTimer = setInterval(() => {
-    if (ordersWsLive) return;
-    if (view === 'orders' || view === 'history' || view === 'courier')
-      renderMain();
-  }, 8000);
 }
 
 async function renderLogin(root) {
@@ -753,9 +976,10 @@ async function renderOrders(container) {
     container.innerHTML = `<p class="a-error">${esc(e.message)}</p>`;
     return;
   }
+  rememberStaffOrderAlertSnapshot(orders);
 
   const live = orders.filter((o) => !isTerminalOrder(o));
-  live.sort((a, b) => orderTimeMs(a, 'createdAt') - orderTimeMs(b, 'createdAt'));
+  live.sort((a, b) => orderAttentionTimeMs(b) - orderAttentionTimeMs(a));
 
   const cardsHtml =
     live.length > 0
@@ -764,7 +988,7 @@ async function renderOrders(container) {
 
   container.innerHTML = `
     <h1 class="a-h1">Siparişler</h1>
-    <p class="a-muted">Canlı siparişler WebSocket ile güncellenir; bağlantı yoksa birkaç saniyede bir REST ile yenilenir.</p>
+    <p class="a-muted">Canlı siparişler ilk yüklemeden sonra WebSocket bildirimiyle güncellenir.</p>
     <p class="a-muted a-status-note"><a class="a-inline-link" href="#" id="a-goto-history">Geçmiş siparişler</a></p>
     <h2 class="a-h2">Canlı siparişler</h2>
     ${cardsHtml}`;
@@ -776,6 +1000,19 @@ async function renderOrders(container) {
       applyView('history');
     };
   }
+
+  container.querySelectorAll('.a-copy-order-id').forEach((btn) => {
+    btn.onclick = async () => {
+      const orderId = btn.dataset.copyOrderId;
+      if (!orderId) return;
+      try {
+        await copyTextToClipboard(orderId);
+        showToast('Sipariş kodu kopyalandı.', 'success');
+      } catch {
+        showToast('Sipariş kodu kopyalanamadı.', 'error');
+      }
+    };
+  });
 
   let couriers = [];
   try {
@@ -804,6 +1041,14 @@ async function renderOrders(container) {
           message: 'Bu sipariş iptal durumuna alınacak. İşlem geçmişte görünecek.',
           confirmLabel: 'İptal et',
           variant: 'danger',
+        });
+        if (!ok) return;
+      }
+      if (act === 'COMPLETE') {
+        const ok = await showConfirmDialog({
+          title: 'Sipariş tamamlansın mı?',
+          message: 'Bu sipariş ödendi/tamamlandı durumuna alınacak ve geçmişte görünecek.',
+          confirmLabel: 'Tamamla',
         });
         if (!ok) return;
       }
@@ -859,6 +1104,8 @@ async function renderOrderHistory(container) {
   });
   const qTrim = historyUi.q.trim();
   if (qTrim) params.set('q', qTrim);
+  const tableNumberTrim = historyUi.tableNumber.trim();
+  if (tableNumberTrim) params.set('tableNumber', tableNumberTrim);
 
   /** @type {{ items?: object[], total?: number, page?: number, pageSize?: number }} */
   let body;
@@ -899,6 +1146,7 @@ async function renderOrderHistory(container) {
     ${histNote}
     <form class="a-history-toolbar" id="hist-search-form" role="search">
       <input class="a-input a-history-q" type="search" id="hist-q" name="q" placeholder="Sipariş no, ürün veya adres ara…" value="${esc(historyUi.q)}" autocomplete="off" />
+      <input class="a-input a-history-table" type="number" min="0" step="1" inputmode="numeric" id="hist-table-number" name="tableNumber" placeholder="Masa no" value="${esc(historyUi.tableNumber)}" autocomplete="off" />
       ${buttonHtml({ label: 'Ara', id: 'hist-submit', type: 'submit', icon: 'magnifying-glass' })}
     </form>
     <p class="a-muted" id="hist-range">${esc(`${fromN}–${toN} / ${total} kayıt`)}</p>
@@ -924,7 +1172,11 @@ async function renderOrderHistory(container) {
     const input = /** @type {HTMLInputElement | null} */ (
       container.querySelector('#hist-q')
     );
+    const tableInput = /** @type {HTMLInputElement | null} */ (
+      container.querySelector('#hist-table-number')
+    );
     historyUi.q = input?.value?.trim() ?? '';
+    historyUi.tableNumber = tableInput?.value?.trim() ?? '';
     historyUi.page = 0;
     renderMain().catch(console.error);
   });
@@ -1241,9 +1493,9 @@ async function renderStaff(container) {
       <input class="a-input" id="st-phone" placeholder="+905…" />
       <label class="a-field-label">Rol</label>
       <select class="a-select" id="st-role">
-        <option value="CASHIER">CASHIER</option>
-        <option value="COURIER">COURIER</option>
-        <option value="ADMIN">ADMIN</option>
+        <option value="CASHIER">${roleLabelTr('CASHIER')}</option>
+        <option value="COURIER">${roleLabelTr('COURIER')}</option>
+        <option value="ADMIN">${roleLabelTr('ADMIN')}</option>
       </select>
       ${buttonHtml({ label: 'Ekle', id: 'st-add', icon: 'user-plus', classes: 'a-staff-add' })}
     </div>
@@ -1266,7 +1518,7 @@ async function renderStaff(container) {
             </span>
           </td>
           <td>${esc(u.phoneE164)}</td>
-          <td>${esc(u.role)}</td>
+          <td>${esc(roleLabelTr(u.role))}</td>
           <td class="st-actions-cell">
             <div class="a-table-actions">
               ${buttonHtml({ label: 'Düzenle', variant: 'secondary', size: 'compact', icon: 'pencil-simple', classes: 'st-edit' })}
@@ -1604,7 +1856,6 @@ async function renderMain() {
 }
 
 function renderApp(root) {
-  clearPoll();
   stopOrdersRealtime();
   if (isCourier()) view = 'courier';
   const r = role();
@@ -1619,7 +1870,7 @@ function renderApp(root) {
     <div class="a-layout">
       <aside class="a-side">
         <div class="a-brand"><span class="a-brand-logo" aria-hidden="true"></span>DAINO</div>
-        <p class="a-muted a-role-note">${esc(r)}</p>
+        <p class="a-muted a-role-note">${esc(roleLabelTr(r))}</p>
         ${sideNav}
         <button type="button" class="a-nav-btn a-logout" id="a-logout"><i class="ph ph-sign-out" aria-hidden="true"></i><span>Çıkış</span></button>
       </aside>
@@ -1637,7 +1888,6 @@ function renderApp(root) {
   root.querySelector('#a-logout').onclick = () => {
     setToken(null);
     screen = 'login';
-    clearPoll();
     stopOrdersRealtime();
     render();
   };
@@ -1645,19 +1895,20 @@ function renderApp(root) {
   renderMain()
     .then(() => {
       stopOrdersWs = connectOrdersStaffRealtime({
-        onOrdersPush: () => {
+        onOrdersPush: async () => {
           if (
             screen === 'app' &&
             (view === 'orders' || view === 'history' || view === 'courier')
           ) {
+            try {
+              notifyInterestingStaffOrderChanges(await fetchOrdersStaff());
+            } catch {
+              /* Render below will surface fetch errors in the active view. */
+            }
             renderMain().catch(console.error);
           }
         },
-        onConnectionChange: (open) => {
-          ordersWsLive = Boolean(open);
-        },
       });
-      startPoll();
     })
     .catch(console.error);
 }
@@ -1667,7 +1918,6 @@ function render() {
   const hasSession = Boolean(getToken() || getRefreshToken());
   screen = hasSession ? 'app' : 'login';
   if (screen === 'login') {
-    clearPoll();
     stopOrdersRealtime();
     renderLogin(root);
   } else {
