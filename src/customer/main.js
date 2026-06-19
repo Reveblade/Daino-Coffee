@@ -252,6 +252,12 @@ function el(tag, props = {}, kids = []) {
   return n;
 }
 
+/** @param {unknown} value */
+function blankLineText(value) {
+  const text = value == null ? '' : String(value).trim();
+  return text && text.toLowerCase() !== 'null' ? text : ' ';
+}
+
 async function loadShop() {
   shopCache = await api('/shop/settings');
   return shopCache;
@@ -541,12 +547,6 @@ function renderMenu(root) {
         `Masa menüsü${tableMeta?.number != null ? ` (no ${tableMeta.number})` : ''}. Servis açık — sipariş verebilirsiniz.`,
       ]),
     );
-  } else {
-    root.append(
-      el('div', { class: 'c-banner' }, [
-        'Web siparişi: hesabınıza adres ekleyin. Ödeme teslimatta (nakit veya POS).',
-      ]),
-    );
   }
 
   const tree = buildCategoryTree(menu.categories);
@@ -621,9 +621,10 @@ function renderMenu(root) {
               }),
           el('div', { class: 'c-menu-prod-rowcard-body' }, [
             el('p', { class: 'c-menu-prod-rowcard-title', text: p.name }),
-            p.description
-              ? el('p', { class: 'c-menu-prod-rowcard-desc', text: p.description })
-              : null,
+            el('p', {
+              class: 'c-menu-prod-rowcard-desc',
+              text: blankLineText(p.description),
+            }),
             el('div', { class: 'c-menu-prod-rowcard-foot' }, [
               el('span', { class: 'c-price', text: formatTry(p.priceKurus) }),
               el(
@@ -651,7 +652,14 @@ function renderMenu(root) {
   if (menuBrowseStack.length === 0) {
     const eligible = roots.filter((c) => catHasMenuContent(c));
     browse.append(el('h2', { class: 'c-section-title', text: 'MENÜ' }));
+    browse.append(
+      el('p', {
+        class: 'c-muted c-menu-home-lead',
+        text: 'Kategori seçerek ürünleri inceleyebilirsiniz.',
+      }),
+    );
     if (eligible.length) {
+      browse.append(el('h3', { class: 'c-menu-subheading', text: 'Kategoriler' }));
       browse.append(
         renderCategoryGrid(eligible, (cat) => {
           menuBrowseStack = [String(cat._id)];
@@ -675,12 +683,12 @@ function renderMenu(root) {
     const prods = sortProds(productsForCat(cur._id));
 
     browse.append(
-      el('div', { class: 'c-menu-toolbar' }, [
+      el('div', { class: 'c-menu-heading-row' }, [
         el(
           'button',
           {
             type: 'button',
-            class: 'c-btn c-btn--ghost c-btn--sm',
+            class: 'c-menu-back-btn c-btn c-btn--ghost c-btn--sm',
             onclick: () => {
               menuBrowseStack.pop();
               render().catch(console.error);
@@ -688,14 +696,12 @@ function renderMenu(root) {
           },
           ['← Geri'],
         ),
+        el('h2', { class: 'c-section-title c-menu-browse-title', text: cur.name }),
       ]),
-      el('h2', { class: 'c-section-title c-menu-browse-title', text: cur.name }),
-      cur.description
-        ? el('p', {
-            class: 'c-muted c-menu-browse-lead',
-            text: cur.description,
-          })
-        : null,
+      el('p', {
+        class: 'c-muted c-menu-browse-lead',
+        text: blankLineText(cur.description),
+      }),
     );
 
     if (subs.length) {
