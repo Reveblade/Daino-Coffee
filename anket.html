@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Favori içeceğini bul — DAINO</title>
+  <meta name="description" content="DAINO içecek anketi ile kahve, çay veya ferah içecek önerini keşfet.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bebas+Neue&amp;family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&amp;family=Dancing+Script:wght@500;600&amp;display=swap"
+    rel="stylesheet">
+</head>
+
+<body class="quiz-page">
+  <header class="equipment-detail-top">
+    <a class="equipment-detail-brand" href="/"><span class="nav-brand-logo" aria-hidden="true"></span>DAINO</a>
+    <a class="equipment-detail-back" href="/">Ana sayfaya dön</a>
+  </header>
+
+  <main class="section-drink-quiz drink-quiz-page-main" aria-labelledby="drink-quiz-heading">
+    <div class="drink-quiz-shell drink-quiz-shell--page">
+      <div class="drink-quiz-copy">
+        <p class="drink-quiz-kicker">Kısa anket</p>
+        <h1 id="drink-quiz-heading" class="section-heading font-display">Favori içeceğini bul</h1>
+        <p>Internetteki kahve eşleştirme anketlerinde öne çıkan süt, tatlılık, gövde, asidite ve aroma tercihlerini DAINO menüsüne uyarladık. Cevaplarına göre statik bir öneri çıkarıyoruz.</p>
+        <div class="drink-quiz-preview-grid" data-drink-preview-grid aria-label="Dönen içecekler">
+          <a href="/kahve/cappuccino.html" class="drink-quiz-preview-card">
+            <img src="/coffee/cappuccino.png" alt="Cappuccino" width="800" height="800" decoding="async">
+            <span>Cappuccino</span>
+          </a>
+          <a href="/kahve/buzlu-mocha.html" class="drink-quiz-preview-card">
+            <img src="/coffee/iced-mocha.png" alt="Buzlu mocha" width="800" height="800" decoding="async">
+            <span>Buzlu mocha</span>
+          </a>
+          <a href="/icecek/hibiskus-cayi.html" class="drink-quiz-preview-card">
+            <img src="https://commons.wikimedia.org/wiki/Special:Redirect/file/A_glass_of_hibiscus_tea_01.jpg?width=600"
+              alt="Hibiskus çayı" width="600" height="600" decoding="async">
+            <span>Hibiskus çayı</span>
+          </a>
+          <a href="/icecek/limonata.html" class="drink-quiz-preview-card">
+            <img src="https://images.unsplash.com/photo-1621263764928-df1444c5e859?auto=format&amp;fit=crop&amp;w=600&amp;q=80"
+              alt="Limonata" width="600" height="600" decoding="async">
+            <span>Limonata</span>
+          </a>
+        </div>
+      </div>
+
+      <section class="drink-quiz-card" data-quiz-card aria-live="polite">
+        <div class="drink-quiz-card-glow" aria-hidden="true"></div>
+        <div class="drink-quiz-start" data-quiz-start-panel>
+          <div class="drink-quiz-orbit" aria-hidden="true">
+            <span>☕</span>
+            <span>🍫</span>
+            <span>🍋</span>
+            <span>🌺</span>
+          </div>
+          <p class="drink-quiz-card-kicker">Başlangıç</p>
+          <h2>5 net seçimle içeceğini bulalım.</h2>
+          <p>Önce içeceğin karakterini, sonra aroma, tatlılık, doku ve servis tercihini seçeceksin.</p>
+          <div class="drink-quiz-card-actions">
+            <button type="button" class="drink-quiz-nav drink-quiz-nav--primary" data-quiz-start>Ankete başla</button>
+          </div>
+        </div>
+
+        <form class="drink-quiz-form drink-quiz-stepper" data-drink-quiz hidden>
+          <div class="drink-quiz-card-head">
+            <div class="drink-quiz-mini-orbit" aria-hidden="true">
+              <span>☕</span><span>🍫</span><span>🍋</span>
+            </div>
+            <div class="drink-quiz-progress" aria-label="Anket ilerlemesi">
+              <span data-quiz-progress-text>1 / 5</span>
+              <div class="drink-quiz-progress-track"><span data-quiz-progress-bar></span></div>
+            </div>
+          </div>
+          <div class="drink-quiz-step" data-quiz-step></div>
+          <div class="drink-quiz-card-actions">
+            <button type="button" class="drink-quiz-nav drink-quiz-nav--ghost" data-quiz-prev>Geri</button>
+            <button type="button" class="drink-quiz-nav drink-quiz-nav--primary" data-quiz-next>Başla</button>
+          </div>
+        </form>
+
+        <aside class="drink-quiz-result drink-quiz-result--page" data-drink-quiz-result hidden></aside>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="/src/drink-quiz-page.js"></script>
+</body>
+
+</html>

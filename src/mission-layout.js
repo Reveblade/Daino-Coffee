@@ -1,6 +1,7 @@
 /**
  * Greedy line-breaking for the mission block; inter-word gaps (.mission-w-gap) flex to
- * absorb slack per line. Five pill slots sit between six phrase segments (same styling).
+ * absorb slack per line. Short rows opt out of justification so mid-width screens
+ * do not stretch a few words across the whole container.
  */
 
 /** Landscape-friendly Unsplash CDN URLs (beans, cups, brewing) — IDs verified to respond 200. */
@@ -27,6 +28,8 @@ const MISSION_PHRASES = [
 
 export const MISSION_ARIA_LABEL = MISSION_PHRASES.join(' ');
 
+const COMPACT_LINE_FILL_THRESHOLD = 0.76;
+
 function coffeeImageAtPillIndex(index) {
   return COFFEE_IMAGE_URLS[index % COFFEE_IMAGE_URLS.length];
 }
@@ -47,6 +50,16 @@ function tokenize(phrases) {
 function measureWordWidth(probe, word) {
   probe.textContent = word;
   return probe.getBoundingClientRect().width;
+}
+
+function measureTokenWidth(token, pillMinPx, probe) {
+  return token.type === 'word' ? measureWordWidth(probe, token.text) : pillMinPx;
+}
+
+function measureLineWidth(tokens, gapPx, pillMinPx, probe) {
+  if (!tokens.length) return 0;
+  const tokenWidth = tokens.reduce((total, token) => total + measureTokenWidth(token, pillMinPx, probe), 0);
+  return tokenWidth + gapPx * (tokens.length - 1);
 }
 
 function breakIntoLines(tokens, availW, gapPx, pillMinPx, probe) {
@@ -94,10 +107,16 @@ function makePill(imageUrl) {
   return p;
 }
 
-function renderLine(lineToks, pillPick) {
+function renderLine(lineToks, pillPick, compact = false) {
   const hasPill = lineToks.some((t) => t.type === 'pill');
   const row = document.createElement('div');
-  row.className = `mission-line${hasPill ? ' mission-line--has-pill' : ' mission-line--words-only'}`;
+  row.className = [
+    'mission-line',
+    hasPill ? 'mission-line--has-pill' : 'mission-line--words-only',
+    compact ? 'mission-line--compact' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   if (!hasPill) {
     lineToks.forEach((tok, i) => {
@@ -191,7 +210,11 @@ export function layoutMissionBlock(container) {
     .forEach((el) => el.remove());
 
   const pillPick = { i: 0 };
-  for (const row of lines) container.appendChild(renderLine(row, pillPick));
+  for (const row of lines) {
+    const rowW = measureLineWidth(row, gapPx, pillMinPx, probe);
+    const compact = rowW / availW < COMPACT_LINE_FILL_THRESHOLD;
+    container.appendChild(renderLine(row, pillPick, compact));
+  }
 
   if (!container.contains(probe)) container.appendChild(probe);
   if (!container.contains(pillProbe)) container.appendChild(pillProbe);

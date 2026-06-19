@@ -1,4 +1,5 @@
 import './style.css';
+import '@phosphor-icons/web/regular';
 import { bindMissionLayout, MISSION_ARIA_LABEL } from './mission-layout.js';
 import geyikUrl from '../assets/geyik.svg?url';
 import heroUrl from '../assets/kahve1.svg?url';
@@ -6,6 +7,7 @@ import roastLightUrl from '../assets/roast-light.jpg?url';
 import roastMediumUrl from '../assets/roast-medium.jpg?url';
 import roastMediumDarkUrl from '../assets/roast-medium-dark.jpg?url';
 import roastDarkUrl from '../assets/roast-dark.jpg?url';
+import { DRINKS } from './drink-data.js';
 
 document.documentElement.style.setProperty('--page-loader-deer-mask', `url("${geyikUrl}")`);
 
@@ -41,6 +43,102 @@ function hydrateRoastThumbs() {
 }
 hydrateRoastThumbs();
 
+function createDrinkCard(drink) {
+  const card = document.createElement('a');
+  card.href = drink.href;
+  card.className = 'coffee-cell coffee-cell-link';
+
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = drink.name;
+
+  const ring = document.createElement('div');
+  ring.className = 'coffee-photo-ring';
+
+  const img = document.createElement('img');
+  img.src = drink.image;
+  img.alt = drink.alt;
+  img.width = 800;
+  img.height = 800;
+  img.decoding = 'async';
+  img.loading = 'lazy';
+
+  ring.append(img);
+  card.append(label, ring);
+  return card;
+}
+
+function hydrateDrinkCarousel() {
+  const grid = document.querySelector('[data-drink-carousel-grid]');
+  if (!grid) return;
+
+  const carousel = grid.closest('.drink-carousel');
+  const prev = document.querySelector('[data-drink-carousel-prev]');
+  const next = document.querySelector('[data-drink-carousel-next]');
+  const status = document.querySelector('[data-drink-carousel-status]');
+  const pageSize = 9;
+  const pageCount = Math.ceil(DRINKS.length / pageSize);
+  const autoplayDelay = 3600;
+  let page = 0;
+  let autoplayTimer;
+
+  const renderPage = (direction = 'next') => {
+    grid.classList.remove('is-animating', 'is-animating-next', 'is-animating-prev');
+    grid.innerHTML = '';
+    const start = page * pageSize;
+    const visible = DRINKS.slice(start, start + pageSize);
+    visible.forEach((drink) => grid.append(createDrinkCard(drink)));
+    if (status) status.textContent = `${page + 1} / ${pageCount}`;
+
+    if (!prefersReducedMotion()) {
+      void grid.offsetWidth;
+      grid.classList.add('is-animating', `is-animating-${direction}`);
+    }
+  };
+
+  const showPage = (nextPage, direction) => {
+    page = (nextPage + pageCount) % pageCount;
+    renderPage(direction);
+  };
+
+  const stopAutoplay = () => {
+    window.clearInterval(autoplayTimer);
+  };
+
+  const startAutoplay = () => {
+    if (pageCount <= 1 || prefersReducedMotion()) return;
+    stopAutoplay();
+    autoplayTimer = window.setInterval(() => showPage(page + 1, 'next'), autoplayDelay);
+  };
+
+  const restartAutoplay = () => {
+    stopAutoplay();
+    startAutoplay();
+  };
+
+  prev?.addEventListener('click', () => {
+    showPage(page - 1, 'prev');
+    restartAutoplay();
+  });
+  next?.addEventListener('click', () => {
+    showPage(page + 1, 'next');
+    restartAutoplay();
+  });
+
+  grid.addEventListener('animationend', () => {
+    grid.classList.remove('is-animating', 'is-animating-next', 'is-animating-prev');
+  });
+  carousel?.addEventListener('mouseenter', stopAutoplay);
+  carousel?.addEventListener('mouseleave', startAutoplay);
+  carousel?.addEventListener('focusin', stopAutoplay);
+  carousel?.addEventListener('focusout', startAutoplay);
+
+  renderPage();
+  startAutoplay();
+}
+
+hydrateDrinkCarousel();
+
 const nav = document.querySelector('nav');
 function updateNavScrolled() {
   if (!nav) return;
@@ -51,13 +149,23 @@ updateNavScrolled();
 
 const NAV_AUTO_HIDE_DELAY = 1000;
 const NAV_REVEAL_ZONE = 72;
+const NAV_AUTO_HIDE_QUERY = '(min-width: 901px) and (hover: hover) and (pointer: fine)';
+const navAutoHideMedia = window.matchMedia?.(NAV_AUTO_HIDE_QUERY);
 let navHideTimer;
 
 function isAtPageTop() {
   return window.scrollY <= 8;
 }
 
+function canAutoHideNav() {
+  return navAutoHideMedia?.matches ?? false;
+}
+
 function setNavHidden(hidden) {
+  if (!canAutoHideNav()) {
+    nav?.classList.remove('nav-hidden');
+    return;
+  }
   if (!nav || isAtPageTop() || menu?.classList.contains('open') || nav.matches(':hover, :focus-within')) return;
   nav.classList.toggle('nav-hidden', hidden);
 }
@@ -65,7 +173,7 @@ function setNavHidden(hidden) {
 function scheduleNavHide() {
   if (!nav) return;
   window.clearTimeout(navHideTimer);
-  if (isAtPageTop()) {
+  if (!canAutoHideNav() || isAtPageTop()) {
     nav.classList.remove('nav-hidden');
     return;
   }
@@ -104,7 +212,12 @@ if (ham && menu) {
   });
 }
 
-if (nav && window.matchMedia?.('(hover: hover) and (pointer: fine)')?.matches) {
+navAutoHideMedia?.addEventListener?.('change', () => {
+  revealNav();
+  scheduleNavHide();
+});
+
+if (nav && canAutoHideNav()) {
   window.addEventListener(
     'pointermove',
     (event) => {

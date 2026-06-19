@@ -62,6 +62,7 @@
     <ul class="nav-links">
       <li><a href="#top">Ana Sayfa</a></li>
       <li><a href="#coffee">Kahve</a></li>
+      <li><a href="/anket.html">Anket</a></li>
       <li><a href="#ekipman">Ekipman</a></li>
       <li><a href="#mission">Hikaye</a></li>
       <li><a href="/iletisim.html">İletişim</a></li>
@@ -77,6 +78,7 @@
   <div class="nav-mobile-menu" id="mobileMenu">
     <a href="#top">Ana Sayfa</a>
     <a href="#coffee">Kahve</a>
+    <a href="/anket.html">Anket</a>
     <a href="#ekipman">Ekipman</a>
     <a href="#mission">Hikaye</a>
     <a href="/iletisim.html">İletişim</a>
@@ -86,13 +88,16 @@
   <section class="hero" id="top">
     <div class="hero-inner">
       <div class="hero-head">
-        <p class="hero-script">Coffee & Bakery</p>
+        <p class="hero-script"><span class="emoji-accent" aria-hidden="true">☕</span> Coffee & Bakery <span
+            class="emoji-accent" aria-hidden="true">🥐</span></p>
       </div>
 
       <div class="hero-stage">
         <h1 class="hero-title">
+          <a class="hero-title-link" href="/anket.html" aria-label="Favori kahveni keşfet anketini aç">
           <span class="hero-title-line">FAVORİ KAHVENİ</span>
           <span class="hero-title-line">KEŞFET</span>
+          </a>
         </h1>
 
         <div class="hero-glass-wrap">
@@ -133,92 +138,28 @@
 
   <section class="post-hero-tagline" aria-label="Öne çıkan mesajlar">
     <div class="post-hero-tagline-inner">
-      <p class="post-hero-tagline-left">Saf kahve, saf topluluk, saf deneyim — hayatında fazla kahve diye bir şey
+      <p class="post-hero-tagline-left"><span class="emoji-accent" aria-hidden="true">🌿</span> Saf kahve, saf topluluk, saf deneyim — hayatında fazla kahve diye bir şey
         yoktur.</p>
       <p class="post-hero-tagline-right">Çekirdeklerimizi yakından tanıyın; ülkenin dört bir yanındaki mahallelerde en
         iyi kahveyi
-        sunmak için güvendiğiniz adres.</p>
+        sunmak için güvendiğiniz adres. <span class="emoji-accent" aria-hidden="true">🫘</span></p>
     </div>
   </section>
 
   <section class="section-coffee" id="coffee">
     <header class="coffee-header">
       <h2 class="section-heading font-display">Kahvelerimiz</h2>
+      <p class="coffee-section-lead">Kahveden çaya, limonatadan buzlu içeceklere uzanan favori seçkimizi 3x3 carousel ile keşfedin.</p>
     </header>
-    <!-- Ürün fotoğrafları: yerel /public/coffee/ -->
-    <div class="coffee-grid">
-      <a href="/kahve/espresso.html" class="coffee-cell coffee-cell-link">
-        <span class="label">Espresso</span>
-        <div class="coffee-photo-ring">
-          <img src="/coffee/espresso.png" alt="Espresso" width="800" height="800" decoding="async" loading="lazy">
-        </div>
-      </a>
-      <a href="/kahve/karamel-macchiato.html" class="coffee-cell coffee-cell-link">
-        <span class="label">Karamel macchiato</span>
-        <div class="coffee-photo-ring">
-          <img src="/coffee/caramel-macchiato.png" alt="Karamel macchiato" width="800" height="800" decoding="async"
-            loading="lazy">
-        </div>
-      </a>
-      <a href="/kahve/cappuccino.html" class="coffee-cell coffee-cell-link">
-        <span class="label">Cappuccino</span>
-        <div class="coffee-photo-ring">
-          <img src="/coffee/cappuccino.png" alt="Cappuccino" width="800" height="800" decoding="async" loading="lazy">
-        </div>
-      </a>
-      <a href="/kahve/cold-brew.html" class="coffee-cell coffee-cell-link">
-        <span class="label">Cold brew</span>
-        <div class="coffee-photo-ring">
-          <img src="/coffee/cold-brew.png" alt="Cold brew" width="800" height="800" decoding="async" loading="lazy">
-        </div>
-      </a>
-      <a href="/kahve/buzlu-karamel-latte.html" class="coffee-cell coffee-cell-link">
-        <span class="label">Buzlu karamel latte</span>
-        <div class="coffee-photo-ring">
-          <img src="/coffee/iced-caramel-latte.png" alt="Buzlu karamel latte" width="800" height="800" decoding="async"
-            loading="lazy">
-        </div>
-      </a>
-      <a href="/kahve/buzlu-mocha.html" class="coffee-cell coffee-cell-link">
-        <span class="label">Buzlu mocha</span>
-        <div class="coffee-photo-ring">
-          <img src="/coffee/iced-mocha.png" alt="Buzlu mocha" width="800" height="800" decoding="async" loading="lazy">
-        </div>
-      </a>
-      <a href="/kahve/buzlu-matcha-espresso.html" class="coffee-cell coffee-cell-link">
-        <span class="label">Buzlu matcha &amp; espresso</span>
-        <div class="coffee-photo-ring">
-          <img src="/coffee/iced-matcha-espresso.png" alt="Buzlu matcha ve espresso içeceği" width="800" height="800"
-            decoding="async" loading="lazy">
-        </div>
-      </a>
-      <a href="/kahve/bogurtlen-hibiskus.html" class="coffee-cell coffee-cell-link">
-        <span class="label">Böğürtlen–hibiskus içeceği</span>
-        <div class="coffee-photo-ring">
-          <img src="/coffee/iced-berry-hibiscus.png" alt="Buzlu böğürtlen ve hibiskus içeceği" width="800" height="800"
-            decoding="async" loading="lazy">
-        </div>
-      </a>
-      <div class="coffee-cell coffee-cell-explore">
-        <span class="label">Keşfet</span>
-        <a href="/siparis" class="coffee-explore-tile" aria-label="Daha fazla kahve seçeneği için sipariş ver">
-          <div class="coffee-photo-ring coffee-explore-ring">
-            <img class="coffee-explore-img" src="/coffee/kahve-cesitleri.png"
-              alt="Espresso, latte, cappuccino ve diğer kahve çeşitleri" width="720" height="720" decoding="async"
-              loading="lazy">
-            <span class="coffee-explore-scrim" aria-hidden="true"></span>
-            <span class="coffee-explore-more" aria-hidden="true">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" class="coffee-explore-more-svg"
-                aria-hidden="true">
-                <circle cx="15" cy="15" r="5.5" fill="currentColor" />
-                <circle cx="33" cy="15" r="5.5" fill="currentColor" />
-                <circle cx="15" cy="33" r="5.5" fill="currentColor" />
-                <circle cx="33" cy="33" r="5.5" fill="currentColor" />
-              </svg>
-            </span>
-          </div>
-        </a>
-      </div>
+    <div class="drink-carousel" aria-label="İçecek carousel">
+      <button type="button" class="drink-carousel-btn drink-carousel-btn--prev" data-drink-carousel-prev aria-label="Önceki içecekler">
+        <i class="ph ph-caret-left" aria-hidden="true"></i>
+      </button>
+      <span class="drink-carousel-status" data-drink-carousel-status aria-live="polite">1 / 1</span>
+      <div class="coffee-grid coffee-grid-carousel" data-drink-carousel-grid></div>
+      <button type="button" class="drink-carousel-btn drink-carousel-btn--next" data-drink-carousel-next aria-label="Sonraki içecekler">
+        <i class="ph ph-caret-right" aria-hidden="true"></i>
+      </button>
     </div>
   </section>
 
@@ -234,43 +175,43 @@
       <a href="/ekipman/espresso-makinesi.html" class="coffee-cell coffee-cell-link" role="listitem">
         <span class="label">Espresso makinesi</span>
         <div class="coffee-photo-ring">
-          <img src="https://images.unsplash.com/photo-1757495152311-10ed5abc0019?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
-            alt="Profesyonel espresso makinesi ve barista" width="800" height="800" decoding="async" loading="lazy">
+          <img src="https://images.unsplash.com/photo-1461988091159-192b6df7054f?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Stüdyo ışığında profesyonel espresso makinesi" width="800" height="800" decoding="async" loading="lazy">
         </div>
       </a>
       <a href="/ekipman/kahve-ogutucusu.html" class="coffee-cell coffee-cell-link" role="listitem">
         <span class="label">Kahve öğütücüsü</span>
         <div class="coffee-photo-ring">
-          <img src="https://images.unsplash.com/photo-1573066380308-24ff4c273dbc?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
-            alt="Kahve öğütücüsü" width="800" height="800" decoding="async" loading="lazy">
+          <img src="https://images.unsplash.com/photo-1633276023326-4fae3e8ba556?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Çekirdek dolu profesyonel kahve öğütücüsü" width="800" height="800" decoding="async" loading="lazy">
         </div>
       </a>
       <a href="/ekipman/filtre-demleme.html" class="coffee-cell coffee-cell-link" role="listitem">
         <span class="label">Filtre demleme</span>
         <div class="coffee-photo-ring">
-          <img src="https://images.unsplash.com/photo-1522825180917-a355ef45e880?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
-            alt="Filtre kahve demleme hazırlığı" width="800" height="800" decoding="async" loading="lazy">
+          <img src="https://images.unsplash.com/photo-1780341219526-a1b2ff5bbfda?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Dijital tartı üzerinde filtre kahve demleme ekipmanı" width="800" height="800" decoding="async" loading="lazy">
         </div>
       </a>
       <a href="/ekipman/ince-uclu-kettle.html" class="coffee-cell coffee-cell-link" role="listitem">
         <span class="label">İnce uçlu kettle</span>
         <div class="coffee-photo-ring">
-          <img src="https://images.unsplash.com/photo-1528402041550-b16e40dd8b81?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
-            alt="İnce uçlu su kettle'ından döküm" width="800" height="800" decoding="async" loading="lazy">
+          <img src="https://images.unsplash.com/photo-1774294536061-1a5dd16437d2?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="İnce uçlu kettle ile kontrollü pour-over demleme" width="800" height="800" decoding="async" loading="lazy">
         </div>
       </a>
       <a href="/ekipman/sut-ve-pitcher.html" class="coffee-cell coffee-cell-link" role="listitem">
         <span class="label">Süt &amp; pitcher</span>
         <div class="coffee-photo-ring">
-          <img src="https://images.unsplash.com/photo-1684506450082-cd219e4e6af1?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
-            alt="Espresso fincanına süt dökülmesi" width="800" height="800" decoding="async" loading="lazy">
+          <img src="https://images.unsplash.com/photo-1599549192669-6baac5d32432?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Barista elinde paslanmaz çelik süt pitcher'ı" width="800" height="800" decoding="async" loading="lazy">
         </div>
       </a>
       <a href="/ekipman/dijital-tarti.html" class="coffee-cell coffee-cell-link" role="listitem">
         <span class="label">Dijital tartı</span>
         <div class="coffee-photo-ring">
-          <img src="https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
-            alt="Mutfak terazisi ve tartı" width="800" height="800" decoding="async" loading="lazy">
+          <img src="https://images.unsplash.com/photo-1753091122032-ddfb454849cc?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Kahve çekirdeklerini ölçen dijital barista tartısı" width="800" height="800" decoding="async" loading="lazy">
         </div>
       </a>
     </div>
@@ -287,11 +228,12 @@
 
     <section class="section-roasting" aria-labelledby="roasting-heading">
       <div class="roasting-content-shell">
-        <h2 class="roasting-head font-display" id="roasting-heading">KAHVENİZİ NASIL İSTERSİNİZ?</h2>
+        <h2 class="roasting-head font-display" id="roasting-heading">KAHVENİZİ NASIL İSTERSİNİZ? <span
+            class="emoji-accent roasting-heading-emoji" aria-hidden="true">&#x2615;</span></h2>
         <div class="roast-list-wrap">
           <div class="roast-list" id="roastList">
             <div class="roast-item" data-roast="light">
-              <span class="roast-label">Hafif kavrulmuş</span>
+              <span class="roast-label"><span class="emoji-accent roast-emoji" aria-hidden="true">🌼</span> Hafif kavrulmuş</span>
               <div class="roast-right">
                 <div class="roast-slot"></div>
               </div>
@@ -300,7 +242,7 @@
               </p>
             </div>
             <div class="roast-item" data-roast="medium">
-              <span class="roast-label">Orta kavrulmuş</span>
+              <span class="roast-label"><span class="emoji-accent roast-emoji" aria-hidden="true">🍯</span> Orta kavrulmuş</span>
               <div class="roast-right">
                 <div class="roast-slot"></div>
               </div>
@@ -309,7 +251,7 @@
               </p>
             </div>
             <div class="roast-item active" data-roast="medium-dark">
-              <span class="roast-label">Orta-koyu kavrulmuş</span>
+              <span class="roast-label"><span class="emoji-accent roast-emoji" aria-hidden="true">🍫</span> Orta-koyu kavrulmuş</span>
               <div class="roast-right">
                 <div class="roast-slot"></div>
               </div>
@@ -318,7 +260,7 @@
                 için uygun.</p>
             </div>
             <div class="roast-item" data-roast="dark">
-              <span class="roast-label">Koyu kavrulmuş</span>
+              <span class="roast-label"><span class="emoji-accent roast-emoji" aria-hidden="true">🔥</span> Koyu kavrulmuş</span>
               <div class="roast-right">
                 <div class="roast-slot"></div>
               </div>
@@ -368,8 +310,14 @@
         <a href="https://reveblade.com" target="_blank" rel="noopener noreferrer">Made By Reve</a>
       </span>
       <span class="site-footer-social">
-        <a href="https://www.instagram.com/dainocoffee/" target="_blank" rel="noopener noreferrer">Instagram</a>
-        <a href="/iletisim.html">İletişim</a>
+        <a href="https://www.instagram.com/dainocoffee/" target="_blank" rel="noopener noreferrer">
+          <i class="ph ph-instagram-logo" aria-hidden="true"></i>
+          Instagram
+        </a>
+        <a href="/iletisim.html">
+          <i class="ph ph-chat-circle-text" aria-hidden="true"></i>
+          İletişim
+        </a>
       </span>
     </footer>
   </div>
