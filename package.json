@@ -9,6 +9,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@phosphor-icons/web": "^2.1.2",
     "qrcode": "^1.5.4"
   },
   "devDependencies": {

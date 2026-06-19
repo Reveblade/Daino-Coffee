@@ -1,3 +1,4 @@
+import '@phosphor-icons/web/regular';
 import { api, decodeJwt, getRefreshToken, getToken, setToken } from './api.js';
 import { connectOrdersStaffRealtime } from './orders-realtime.js';
 import geyikBrandUrl from './assets/geyik.svg?url';
@@ -11,6 +12,15 @@ import { idStr } from './menu/helpers.js';
 import { renderMenuList } from './menu/pages/menu-list.js';
 import { renderProductFormPage } from './menu/pages/product-form-page.js';
 import { renderCategoryFormPage } from './menu/pages/category-form-page.js';
+import {
+  buttonHtml,
+  emptyRowHtml,
+  errorMessage,
+  escapeHtml as esc,
+  showConfirmDialog,
+  showToast,
+  withButtonBusy,
+} from './ui.js';
 
 /** @type {'login' | 'app'} */
 let screen = 'login';
@@ -51,14 +61,6 @@ let menuUi = {
   id: null,
   list: defaultMenuListUi(),
 };
-
-function esc(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
 
 function channelLabelTr(ch) {
   if (ch === 'IN_PLACE') return 'Masa (QR)';
@@ -161,7 +163,7 @@ function tableNumberCell(o) {
 function orderItemsSummary(o) {
   if (!Array.isArray(o.items) || !o.items.length) return '—';
   let units = 0;
-  for (const i of o.items) units += Number(i.quantity) || 0;
+  for (const i of o.items) units += Number(i.quantity ?? i.qty) || 0;
   const lines = o.items.length;
   const addCount = Array.isArray(o.history)
     ? o.history.filter((h) => h?.note === 'IN_PLACE_ITEMS_ADDED').length
@@ -169,6 +171,59 @@ function orderItemsSummary(o) {
   const extra =
     o.channel === 'IN_PLACE' && addCount > 0 ? ` · ${addCount} ek` : '';
   return `${lines} kalem, ${units} adet${extra}`;
+}
+
+/** @param {object} it */
+function orderItemQty(it) {
+  return Number(it?.quantity ?? it?.qty) || 0;
+}
+
+/** @param {object} it */
+function liveOrderItemLineHtml(it) {
+  const qty = orderItemQty(it);
+  const opt = orderItemOptionSelectionsText(it);
+  const optHtml = opt ? `<span class="a-order-card__item-options">${esc(opt)}</span>` : '';
+  return `<li><strong>${esc(String(qty))}×</strong><span>${esc(it?.name ?? 'Ürün')}</span>${optHtml}</li>`;
+}
+
+/** @param {object} o */
+function liveOrderItemsHtml(o) {
+  if (!Array.isArray(o.items) || !o.items.length) {
+    return '<p class="a-muted a-order-card__items">Ürün bilgisi yok.</p>';
+  }
+  return `<ul class="a-order-card__item-list">${o.items.map((it) => liveOrderItemLineHtml(it)).join('')}</ul>`;
+}
+
+/** @param {object} o */
+function liveOrderDeliveryHtml(o) {
+  if (o.channel !== 'ONLINE') return '';
+  const rec = o.deliveryRecipient;
+  const addr = o.deliveryAddress;
+  const recipientBits = [];
+  if (rec && typeof rec === 'object') {
+    const fullName = [rec.firstName, rec.lastName]
+      .map((x) => String(x ?? '').trim())
+      .filter(Boolean)
+      .join(' ');
+    if (fullName) recipientBits.push(fullName);
+    if (rec.phoneE164) recipientBits.push(formatPhoneTrDisplay(String(rec.phoneE164)));
+  }
+  const addressBits = [];
+  if (addr && typeof addr === 'object') {
+    if (addr.label) addressBits.push(String(addr.label));
+    if (addr.line1) addressBits.push(String(addr.line1));
+    if (addr.line2) addressBits.push(String(addr.line2));
+    const districtCity = [addr.district, addr.city]
+      .map((x) => String(x ?? '').trim())
+      .filter(Boolean)
+      .join(' / ');
+    if (districtCity) addressBits.push(districtCity);
+  }
+  if (!recipientBits.length && !addressBits.length) return '';
+  return `<div class="a-order-card__delivery">
+    ${recipientBits.length ? `<p><strong>Alıcı:</strong> ${esc(recipientBits.join(' · '))}</p>` : ''}
+    ${addressBits.length ? `<p><strong>Adres:</strong> ${esc(addressBits.join(', '))}</p>` : ''}
+  </div>`;
 }
 
 /** @returns {{ text: string, title: string }} */
@@ -228,70 +283,23 @@ async function downloadTableQrPng(menuUrl, tableNumber) {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(href), 2000);
   } catch (e) {
-    alert(e instanceof Error ? e.message : 'QR oluşturulamadı');
+    showToast(e instanceof Error ? e.message : 'QR oluşturulamadı', 'error');
   }
 }
 
-/** Two explicit steps (embedded / strict UAs may skip stacked `confirm()`). */
-function showQrRegenerateTwoStepDialog() {
-  return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.className = 'a-overlay';
-    overlay.setAttribute('role', 'dialog');
-    overlay.setAttribute('aria-modal', 'true');
-
-    const panel = document.createElement('div');
-    panel.className = 'a-dialog';
-
-    const finish = (value) => {
-      document.removeEventListener('keydown', onKey);
-      overlay.remove();
-      resolve(value);
-    };
-
-    /** @param {KeyboardEvent} e */
-    function onKey(e) {
-      if (e.key === 'Escape') finish(false);
-    }
-    document.addEventListener('keydown', onKey);
-
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) finish(false);
-    });
-
-    function step1() {
-      panel.innerHTML = `
-        <h2 class="a-dialog-title">QR yenileme</h2>
-        <p class="a-dialog-msg">QR kodu ve menü bağlantısı yenilenecek. Daha önce yazdırılmış QR kodları artık çalışmaz.</p>
-        <div class="a-dialog-actions">
-          <button type="button" class="a-btn secondary" data-act="cancel">İptal</button>
-          <button type="button" class="a-btn" data-act="next">Devam et</button>
-        </div>`;
-      panel.querySelector('[data-act="cancel"]').onclick = () => finish(false);
-      panel.querySelector('[data-act="next"]').onclick = () => step2();
-      requestAnimationFrame(() =>
-        /** @type {HTMLElement} */ (panel.querySelector('[data-act="next"]'))?.focus(),
-      );
-    }
-
-    function step2() {
-      panel.innerHTML = `
-        <h2 class="a-dialog-title">Son onay</h2>
-        <p class="a-dialog-msg">QR ve masa bağlantısı kalıcı olarak değişecek. Bu işlem geri alınamaz.</p>
-        <div class="a-dialog-actions">
-          <button type="button" class="a-btn secondary" data-act="cancel">İptal</button>
-          <button type="button" class="a-btn" data-act="ok">QR'ı yenile</button>
-        </div>`;
-      panel.querySelector('[data-act="cancel"]').onclick = () => finish(false);
-      panel.querySelector('[data-act="ok"]').onclick = () => finish(true);
-      requestAnimationFrame(() =>
-        /** @type {HTMLElement} */ (panel.querySelector('[data-act="ok"]'))?.focus(),
-      );
-    }
-
-    step1();
-    overlay.appendChild(panel);
-    document.body.appendChild(overlay);
+/** Two explicit steps for irreversible QR regeneration. */
+async function showQrRegenerateTwoStepDialog() {
+  const first = await showConfirmDialog({
+    title: 'QR yenileme',
+    message: 'QR kodu ve menü bağlantısı yenilenecek. Daha önce yazdırılmış QR kodları artık çalışmaz.',
+    confirmLabel: 'Devam et',
+  });
+  if (!first) return false;
+  return showConfirmDialog({
+    title: 'Son onay',
+    message: 'QR ve masa bağlantısı kalıcı olarak değişecek. Bu işlem geri alınamaz.',
+    confirmLabel: "QR'ı yenile",
+    variant: 'danger',
   });
 }
 
@@ -421,20 +429,39 @@ function orderFlowActionsInnerHtml(o) {
   const bits = [];
   if (canCancelOrder(o)) {
     bits.push(
-      `<button type="button" class="a-btn secondary a-act" data-id="${id}" data-ch="${chEsc}" data-act="CANCEL">İptal</button>`,
+      buttonHtml({
+        label: 'İptal',
+        variant: 'danger',
+        size: 'compact',
+        icon: 'x-circle',
+        classes: 'a-act',
+        attrs: { 'data-id': id, 'data-ch': chEsc, 'data-act': 'CANCEL' },
+      }),
     );
   }
   const step = primaryFlowStep(o);
   if (step?.kind === 'transition') {
     bits.push(
-      `<button type="button" class="a-btn a-act" data-id="${id}" data-ch="${chEsc}" data-act="${esc(step.act)}">→ ${esc(step.targetLabel)}</button>`,
+      buttonHtml({
+        label: step.targetLabel,
+        size: 'compact',
+        icon: 'arrow-right',
+        classes: 'a-act',
+        attrs: { 'data-id': id, 'data-ch': chEsc, 'data-act': step.act },
+      }),
     );
   } else if (step?.kind === 'assign') {
     bits.push(
       `<select class="a-select a-courier-sel" data-id="${id}" aria-label="Kurye"><option value="">Kurye seç…</option></select>`,
     );
     bits.push(
-      `<button type="button" class="a-btn a-assign" data-id="${id}">→ ${esc(step.targetLabel)}</button>`,
+      buttonHtml({
+        label: step.targetLabel,
+        size: 'compact',
+        icon: 'arrow-right',
+        classes: 'a-assign',
+        attrs: { 'data-id': id },
+      }),
     );
   }
   return bits.join('');
@@ -507,6 +534,8 @@ function liveOrderCardHtml(o) {
       : esc(onlineStatusTr(o.status));
   const masa = ch === 'IN_PLACE' ? tableNumberCell(o) : '—';
   const itemsSummary = esc(orderItemsSummary(o));
+  const itemsHtml = liveOrderItemsHtml(o);
+  const deliveryHtml = liveOrderDeliveryHtml(o);
   const addDisp = latestInPlaceAdditionDisplay(o);
   const sonEk =
     ch === 'IN_PLACE' && addDisp.text
@@ -520,6 +549,8 @@ function liveOrderCardHtml(o) {
     </div>
     <p class="a-order-card__meta"><strong>${masa}</strong></p>
     <p class="a-order-card__items">${itemsSummary}</p>
+    ${itemsHtml}
+    ${deliveryHtml}
     ${sonEk}
     <p class="a-order-card__status"><span title="${stRaw}">${stLabel}</span></p>
     <div class="a-order-card__actions">${actions ? `<div class="a-order-card__flow">${actions}</div>` : '<span class="a-muted">İşlem yok</span>'}</div>
@@ -550,7 +581,7 @@ function historyOrderRowHtml(o) {
         }),
       )
     : '—';
-  return `<tr data-detail="${rawId}"><td><code>${shortId}</code></td><td><span class="a-badge">${chLabel}</span></td><td>${masa}</td><td>${itemsSummary}</td><td><span title="${stRaw}">${stLabel}</span></td><td class="a-muted">${when}</td><td><button type="button" class="a-btn secondary a-history-detail-btn" data-detail="${rawId}">Detay</button></td></tr>`;
+  return `<tr data-detail="${rawId}"><td><code>${shortId}</code></td><td><span class="a-badge">${chLabel}</span></td><td>${masa}</td><td>${itemsSummary}</td><td><span title="${stRaw}">${stLabel}</span></td><td class="a-muted">${when}</td><td><div class="a-table-actions">${buttonHtml({ label: 'Detay', variant: 'secondary', size: 'compact', icon: 'info', classes: 'a-history-detail-btn', attrs: { 'data-detail': rawId } })}</div></td></tr>`;
 }
 
 function clearPoll() {
@@ -594,7 +625,7 @@ function startPoll() {
 async function renderLogin(root) {
   root.innerHTML = `
     <div class="a-login">
-      <div class="a-brand" style="margin-bottom:8px"><span class="a-brand-logo" aria-hidden="true"></span>DAINO</div>
+      <div class="a-brand a-h1--flush"><span class="a-brand-logo" aria-hidden="true"></span>DAINO</div>
       <p class="a-muted">Operasyon paneli — yetkili telefon veya sahip girişi.</p>
       <div class="a-tabs" id="login-tabs">
         <button type="button" class="a-tab active" data-tab="otp">Personel (SMS)</button>
@@ -611,43 +642,49 @@ async function renderLogin(root) {
     err.textContent = '';
     pane.innerHTML = `
       <label class="a-muted">Telefon</label>
-      <input class="a-input" id="otp-phone" placeholder="+905…" style="margin:8px 0" />
-      <button type="button" class="a-btn" id="otp-send">Kod gönder</button>
-      <div style="margin-top:16px">
+      <input class="a-input a-login-field" id="otp-phone" placeholder="+905…" autocomplete="tel" />
+      ${buttonHtml({ label: 'Kod gönder', id: 'otp-send', icon: 'paper-plane-tilt' })}
+      <div class="a-login-gap">
         <label class="a-muted">Kod</label>
-        <input class="a-input" id="otp-code" maxlength="6" placeholder="6 hane" style="margin:8px 0" />
-        <button type="button" class="a-btn" id="otp-verify">Giriş</button>
+        <input class="a-input a-login-field" id="otp-code" maxlength="6" placeholder="6 hane" inputmode="numeric" autocomplete="one-time-code" />
+        ${buttonHtml({ label: 'Giriş', id: 'otp-verify', icon: 'sign-in' })}
       </div>`;
     pane.querySelector('#otp-send').onclick = async () => {
       err.textContent = '';
-      try {
-        await api('/auth/otp/request', {
-          method: 'POST',
-          body: JSON.stringify({
-            phone: pane.querySelector('#otp-phone').value.trim(),
-          }),
-        });
-      } catch (e) {
-        err.textContent = e.message;
-      }
+      await withButtonBusy(pane.querySelector('#otp-send'), 'Gönderiliyor…', async () => {
+        try {
+          await api('/auth/otp/request', {
+            method: 'POST',
+            body: JSON.stringify({
+              phone: pane.querySelector('#otp-phone').value.trim(),
+            }),
+          });
+          showToast('Kod gönderildi.', 'success');
+          /** @type {HTMLElement | null} */ (pane.querySelector('#otp-code'))?.focus();
+        } catch (e) {
+          err.textContent = errorMessage(e);
+        }
+      });
     };
     pane.querySelector('#otp-verify').onclick = async () => {
       err.textContent = '';
-      try {
-        const { accessToken, refreshToken } = await api('/auth/otp/verify', {
-          method: 'POST',
-          body: JSON.stringify({
-            phone: pane.querySelector('#otp-phone').value.trim(),
-            code: pane.querySelector('#otp-code').value.trim(),
-          }),
-        });
-        setToken(accessToken, refreshToken);
-        screen = 'app';
-        view = isCourier() ? 'courier' : 'orders';
-        render();
-      } catch (e) {
-        err.textContent = e.message;
-      }
+      await withButtonBusy(pane.querySelector('#otp-verify'), 'Giriş yapılıyor…', async () => {
+        try {
+          const { accessToken, refreshToken } = await api('/auth/otp/verify', {
+            method: 'POST',
+            body: JSON.stringify({
+              phone: pane.querySelector('#otp-phone').value.trim(),
+              code: pane.querySelector('#otp-code').value.trim(),
+            }),
+          });
+          setToken(accessToken, refreshToken);
+          screen = 'app';
+          view = isCourier() ? 'courier' : 'orders';
+          render();
+        } catch (e) {
+          err.textContent = errorMessage(e);
+        }
+      });
     };
   }
 
@@ -655,27 +692,29 @@ async function renderLogin(root) {
     err.textContent = '';
     pane.innerHTML = `
       <label class="a-muted">Telefon (OWNER_PHONE_E164)</label>
-      <input class="a-input" id="ow-phone" style="margin:8px 0" />
+      <input class="a-input a-login-field" id="ow-phone" autocomplete="tel" />
       <label class="a-muted">Şifre</label>
-      <input class="a-input" id="ow-pass" type="password" style="margin:8px 0" />
-      <button type="button" class="a-btn" id="ow-go">Giriş</button>`;
+      <input class="a-input a-login-field" id="ow-pass" type="password" autocomplete="current-password" />
+      ${buttonHtml({ label: 'Giriş', id: 'ow-go', icon: 'sign-in' })}`;
     pane.querySelector('#ow-go').onclick = async () => {
       err.textContent = '';
-      try {
-        const { accessToken, refreshToken } = await api('/auth/owner/login', {
-          method: 'POST',
-          body: JSON.stringify({
-            phone: pane.querySelector('#ow-phone').value.trim(),
-            password: pane.querySelector('#ow-pass').value,
-          }),
-        });
-        setToken(accessToken, refreshToken);
-        screen = 'app';
-        view = 'orders';
-        render();
-      } catch (e) {
-        err.textContent = e.message;
-      }
+      await withButtonBusy(pane.querySelector('#ow-go'), 'Giriş yapılıyor…', async () => {
+        try {
+          const { accessToken, refreshToken } = await api('/auth/owner/login', {
+            method: 'POST',
+            body: JSON.stringify({
+              phone: pane.querySelector('#ow-phone').value.trim(),
+              password: pane.querySelector('#ow-pass').value,
+            }),
+          });
+          setToken(accessToken, refreshToken);
+          screen = 'app';
+          view = 'orders';
+          render();
+        } catch (e) {
+          err.textContent = errorMessage(e);
+        }
+      });
     };
   }
 
@@ -693,7 +732,17 @@ async function renderLogin(root) {
 
 function navButton(label, key) {
   const active = view === key ? 'active' : '';
-  return `<button type="button" class="a-nav-btn ${active}" data-view="${key}">${esc(label)}</button>`;
+  const icons = {
+    orders: 'receipt',
+    history: 'clock-counter-clockwise',
+    shop: 'storefront',
+    staff: 'users-three',
+    tables: 'qr-code',
+    menu: 'fork-knife',
+    courier: 'scooter',
+  };
+  const icon = icons[key] ? `<i class="ph ph-${esc(icons[key])}" aria-hidden="true"></i>` : '';
+  return `<button type="button" class="a-nav-btn ${active}" data-view="${key}">${icon}<span>${esc(label)}</span></button>`;
 }
 
 async function renderOrders(container) {
@@ -716,7 +765,7 @@ async function renderOrders(container) {
   container.innerHTML = `
     <h1 class="a-h1">Siparişler</h1>
     <p class="a-muted">Canlı siparişler WebSocket ile güncellenir; bağlantı yoksa birkaç saniyede bir REST ile yenilenir.</p>
-    <p class="a-muted" style="margin-top:-8px"><a class="a-inline-link" href="#" id="a-goto-history">Geçmiş siparişler</a></p>
+    <p class="a-muted a-status-note"><a class="a-inline-link" href="#" id="a-goto-history">Geçmiş siparişler</a></p>
     <h2 class="a-h2">Canlı siparişler</h2>
     ${cardsHtml}`;
 
@@ -749,19 +798,31 @@ async function renderOrders(container) {
       const id = btn.dataset.id;
       const ch = btn.dataset.ch;
       const act = btn.dataset.act;
+      if (act === 'CANCEL') {
+        const ok = await showConfirmDialog({
+          title: 'Sipariş iptal edilsin mi?',
+          message: 'Bu sipariş iptal durumuna alınacak. İşlem geçmişte görünecek.',
+          confirmLabel: 'İptal et',
+          variant: 'danger',
+        });
+        if (!ok) return;
+      }
       const path =
         ch === 'IN_PLACE'
           ? `/orders/${id}/in-place/transition`
           : `/orders/${id}/online/transition`;
-      try {
-        await api(path, {
-          method: 'POST',
-          body: JSON.stringify({ action: act }),
-        });
-        await rerenderStaffOrderContainers(container);
-      } catch (e) {
-        alert(e.message);
-      }
+      await withButtonBusy(/** @type {HTMLElement} */ (btn), 'İşleniyor…', async () => {
+        try {
+          await api(path, {
+            method: 'POST',
+            body: JSON.stringify({ action: act }),
+          });
+          showToast('Sipariş güncellendi.', 'success');
+          await rerenderStaffOrderContainers(container);
+        } catch (e) {
+          showToast(errorMessage(e), 'error');
+        }
+      });
     };
   });
 
@@ -771,18 +832,22 @@ async function renderOrders(container) {
       const sel = container.querySelector(`.a-courier-sel[data-id="${id}"]`);
       const courierUserId = sel?.value;
       if (!courierUserId) {
-        alert('Kurye seçin.');
+        showToast('Kurye seçin.', 'error');
+        sel?.focus();
         return;
       }
-      try {
-        await api(`/orders/${id}/assign-courier`, {
-          method: 'POST',
-          body: JSON.stringify({ courierUserId }),
-        });
-        await rerenderStaffOrderContainers(container);
-      } catch (e) {
-        alert(e.message);
-      }
+      await withButtonBusy(/** @type {HTMLElement} */ (btn), 'Atanıyor…', async () => {
+        try {
+          await api(`/orders/${id}/assign-courier`, {
+            method: 'POST',
+            body: JSON.stringify({ courierUserId }),
+          });
+          showToast('Kurye atandı.', 'success');
+          await rerenderStaffOrderContainers(container);
+        } catch (e) {
+          showToast(errorMessage(e), 'error');
+        }
+      });
     };
   });
 }
@@ -834,19 +899,19 @@ async function renderOrderHistory(container) {
     ${histNote}
     <form class="a-history-toolbar" id="hist-search-form" role="search">
       <input class="a-input a-history-q" type="search" id="hist-q" name="q" placeholder="Sipariş no, ürün veya adres ara…" value="${esc(historyUi.q)}" autocomplete="off" />
-      <button type="submit" class="a-btn" id="hist-submit">Ara</button>
+      ${buttonHtml({ label: 'Ara', id: 'hist-submit', type: 'submit', icon: 'magnifying-glass' })}
     </form>
     <p class="a-muted" id="hist-range">${esc(`${fromN}–${toN} / ${total} kayıt`)}</p>
-    <div style="overflow:auto;margin-top:8px">
+    <div class="a-table-wrap">
       <table class="a-table">
         <thead><tr><th>ID</th><th>Kanal</th><th>Masa</th><th>Ürünler</th><th>Durum</th><th>Güncellendi</th><th></th></tr></thead>
-        <tbody id="hist-tbody">${histRows || `<tr><td colspan="${emptyColspan}" class="a-muted">Kayıt yok</td></tr>`}</tbody>
+        <tbody id="hist-tbody">${histRows || emptyRowHtml('Kayıt yok', emptyColspan)}</tbody>
       </table>
     </div>
     <div class="a-history-pager">
-      <button type="button" class="a-btn secondary" id="hist-prev" ${hasPrev ? '' : 'disabled'}>Önceki</button>
+      ${buttonHtml({ label: 'Önceki', id: 'hist-prev', variant: 'secondary', icon: 'caret-left', disabled: !hasPrev })}
       <span class="a-muted">Sayfa ${esc(String(page + 1))}</span>
-      <button type="button" class="a-btn secondary" id="hist-next" ${hasNext ? '' : 'disabled'}>Sonraki</button>
+      ${buttonHtml({ label: 'Sonraki', id: 'hist-next', variant: 'secondary', icon: 'caret-right', disabled: !hasNext })}
     </div>`;
 
   container.querySelector('#a-goto-live')?.addEventListener('click', (ev) => {
@@ -916,7 +981,7 @@ function orderDetailItemRow(it) {
   const line = qty * unit;
   const opt = orderItemOptionSelectionsText(it);
   const optHtml = opt
-    ? `<div class="a-muted" style="font-size:0.82rem;margin-top:4px">${esc(opt)}</div>`
+    ? `<div class="a-muted a-option-note">${esc(opt)}</div>`
     : '';
   return `<tr><td>${esc(it.name)}${optHtml}</td><td>${esc(String(qty))}</td><td>${esc(formatTryFromKurus(unit))}</td><td>${esc(formatTryFromKurus(line))}</td></tr>`;
 }
@@ -939,7 +1004,7 @@ async function renderOrderHistoryDetail(container, orderId) {
   } catch (e) {
     container.innerHTML = `
       <p class="a-error">${esc(e.message)}</p>
-      <p><button type="button" class="a-btn secondary" id="hist-det-fallback">Listeye dön</button></p>`;
+      <p>${buttonHtml({ label: 'Listeye dön', id: 'hist-det-fallback', variant: 'secondary', icon: 'arrow-left' })}</p>`;
     container.querySelector('#hist-det-fallback')?.addEventListener('click', () => {
       historyUi.detailOrderId = null;
       renderMain().catch(console.error);
@@ -963,7 +1028,7 @@ async function renderOrderHistoryDetail(container, orderId) {
     const phRaw = rec.phoneE164 != null && String(rec.phoneE164).trim() ? String(rec.phoneE164).trim() : '';
     const ph = phRaw ? esc(formatPhoneTrDisplay(phRaw)) : '—';
     if (fn !== '—' || ln !== '—' || ph !== '—') {
-      recipientBlock = `<div class="a-card a-order-detail-block"><h2 class="a-h2" style="margin-top:0">Teslim alıcı</h2>
+      recipientBlock = `<div class="a-card a-order-detail-block"><h2 class="a-h2 a-h2--flush">Teslim alıcı</h2>
       <p><strong>Ad:</strong> ${fn}</p>
       <p><strong>Soyad:</strong> ${ln}</p>
       <p><strong>Telefon:</strong> ${ph}</p></div>`;
@@ -980,7 +1045,7 @@ async function renderOrderHistoryDetail(container, orderId) {
     if (addr.city) rows.push(`<p><strong>İl:</strong> ${esc(String(addr.city))}</p>`);
     if (addr.country) rows.push(`<p><strong>Ülke:</strong> ${esc(String(addr.country))}</p>`);
     if (rows.length) {
-      addrBlock = `<div class="a-card a-order-detail-block"><h2 class="a-h2" style="margin-top:0">Teslimat adresi</h2>${rows.join('')}</div>`;
+      addrBlock = `<div class="a-card a-order-detail-block"><h2 class="a-h2 a-h2--flush">Teslimat adresi</h2>${rows.join('')}</div>`;
     }
   }
   const coll = o.collectionMethod
@@ -1000,12 +1065,12 @@ async function renderOrderHistoryDetail(container, orderId) {
 
   container.innerHTML = `
     <h1 class="a-h1">Sipariş detayı</h1>
-    <p class="a-muted"><button type="button" class="a-btn secondary" id="hist-det-back">← Geçmiş listesine dön</button></p>
+    <p class="a-muted">${buttonHtml({ label: 'Geçmiş listesine dön', id: 'hist-det-back', variant: 'secondary', icon: 'arrow-left' })}</p>
     <div class="a-card a-order-detail-block">
       <div class="a-row">
         <div>
-          <p class="a-muted" style="margin:0">Sipariş</p>
-          <p style="margin:4px 0 0"><code>${esc(rawId)}</code></p>
+          <p class="a-muted a-tight">Sipariş</p>
+          <p class="a-detail-id"><code>${esc(rawId)}</code></p>
         </div>
         <span class="a-badge">${chLabel}</span>
       </div>
@@ -1019,17 +1084,17 @@ async function renderOrderHistoryDetail(container, orderId) {
     ${recipientBlock}
     ${addrBlock}
     <h2 class="a-h2">Ürünler</h2>
-    <div style="overflow:auto">
+    <div class="a-table-wrap">
       <table class="a-table">
         <thead><tr><th>Ürün</th><th>Adet</th><th>Birim</th><th>Satır</th></tr></thead>
-        <tbody>${itemsRows || '<tr><td colspan="4" class="a-muted">—</td></tr>'}</tbody>
+        <tbody>${itemsRows || emptyRowHtml('Ürün yok', 4)}</tbody>
       </table>
     </div>
     <h2 class="a-h2">Durum geçmişi</h2>
-    <div style="overflow:auto">
+    <div class="a-table-wrap">
       <table class="a-table">
         <thead><tr><th>Zaman</th><th>Geçiş</th><th>Not</th></tr></thead>
-        <tbody>${histRows || '<tr><td colspan="3" class="a-muted">—</td></tr>'}</tbody>
+        <tbody>${histRows || emptyRowHtml('Durum geçmişi yok', 3)}</tbody>
       </table>
     </div>`;
 
@@ -1053,10 +1118,10 @@ async function renderCourier(container) {
     ? `<div class="a-card">
          <div class="a-row"><strong>Güncel</strong><span class="a-badge">${esc(cur.status)}</span></div>
          <p class="a-muted">Sipariş: <code>${esc(cur._id)}</code></p>
-         <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-           <button type="button" class="a-btn" id="c-start">Yola çıktım</button>
-           <button type="button" class="a-btn secondary" id="c-pos">Teslim + POS</button>
-           <button type="button" class="a-btn secondary" id="c-cash">Teslim + nakit</button>
+         <div class="a-action-row a-section-top">
+           ${buttonHtml({ label: 'Yola çıktım', id: 'c-start', icon: 'navigation-arrow' })}
+           ${buttonHtml({ label: 'Teslim + POS', id: 'c-pos', variant: 'secondary', icon: 'credit-card' })}
+           ${buttonHtml({ label: 'Teslim + nakit', id: 'c-cash', variant: 'secondary', icon: 'money' })}
          </div>
        </div>`
     : `<div class="a-card a-muted">Atanmış aktif teslimat yok.</div>`;
@@ -1071,9 +1136,9 @@ async function renderCourier(container) {
   container.innerHTML = `
     <h1 class="a-h1">Kurye</h1>
     ${curHtml}
-    <h2 class="a-h1" style="font-size:1.25rem;margin-top:24px">Geçmiş</h2>
-    <table class="a-table"><thead><tr><th>ID</th><th>Durum</th></tr></thead>
-    <tbody>${histRows || '<tr><td colspan="2" class="a-muted">—</td></tr>'}</tbody></table>`;
+    <h2 class="a-h2">Geçmiş</h2>
+    <div class="a-table-wrap"><table class="a-table"><thead><tr><th>ID</th><th>Durum</th></tr></thead>
+    <tbody>${histRows || emptyRowHtml('Kayıt yok', 2)}</tbody></table></div>`;
 
   const id = cur?._id;
   const q = (method, body) =>
@@ -1089,28 +1154,37 @@ async function renderCourier(container) {
   btn('#c-start', async () => {
     if (!id) return;
     try {
-      await q('/start-delivery');
-      await renderCourier(container);
+      await withButtonBusy(container.querySelector('#c-start'), 'Güncelleniyor…', async () => {
+        await q('/start-delivery');
+        showToast('Teslimat yola çıktı olarak işaretlendi.', 'success');
+        await renderCourier(container);
+      });
     } catch (e) {
-      alert(e.message);
+      showToast(errorMessage(e), 'error');
     }
   });
   btn('#c-pos', async () => {
     if (!id) return;
     try {
-      await q('/deliver', { collectionMethod: 'POS' });
-      await renderCourier(container);
+      await withButtonBusy(container.querySelector('#c-pos'), 'Tamamlanıyor…', async () => {
+        await q('/deliver', { collectionMethod: 'POS' });
+        showToast('Teslimat tamamlandı.', 'success');
+        await renderCourier(container);
+      });
     } catch (e) {
-      alert(e.message);
+      showToast(errorMessage(e), 'error');
     }
   });
   btn('#c-cash', async () => {
     if (!id) return;
     try {
-      await q('/deliver', { collectionMethod: 'CASH' });
-      await renderCourier(container);
+      await withButtonBusy(container.querySelector('#c-cash'), 'Tamamlanıyor…', async () => {
+        await q('/deliver', { collectionMethod: 'CASH' });
+        showToast('Teslimat tamamlandı.', 'success');
+        await renderCourier(container);
+      });
     } catch (e) {
-      alert(e.message);
+      showToast(errorMessage(e), 'error');
     }
   });
 }
@@ -1128,20 +1202,23 @@ async function renderShop(container) {
     <div class="a-card">
       <div class="a-row">
         <span>Masadan sipariş (servis)</span>
-        <button type="button" class="a-btn" id="svc-toggle">${s.serviceEnabled ? 'Açık → Kapat' : 'Kapalı → Aç'}</button>
+        ${buttonHtml({ label: s.serviceEnabled ? 'Açık, kapat' : 'Kapalı, aç', id: 'svc-toggle', icon: s.serviceEnabled ? 'toggle-right' : 'toggle-left' })}
       </div>
       <p class="a-muted">Kapalıyken QR menü self-servis mesajı gösterir; masa siparişi API ile engellenir.</p>
     </div>`;
   container.querySelector('#svc-toggle').onclick = async () => {
-    try {
-      await api('/shop/settings', {
-        method: 'PATCH',
-        body: JSON.stringify({ serviceEnabled: !s.serviceEnabled }),
-      });
-      await renderShop(container);
-    } catch (e) {
-      alert(e.message);
-    }
+    await withButtonBusy(container.querySelector('#svc-toggle'), 'Güncelleniyor…', async () => {
+      try {
+        await api('/shop/settings', {
+          method: 'PATCH',
+          body: JSON.stringify({ serviceEnabled: !s.serviceEnabled }),
+        });
+        showToast('Mağaza ayarı güncellendi.', 'success');
+        await renderShop(container);
+      } catch (e) {
+        showToast(errorMessage(e), 'error');
+      }
+    });
   };
 }
 
@@ -1155,25 +1232,25 @@ async function renderStaff(container) {
   }
   container.innerHTML = `
     <h1 class="a-h1">Personel</h1>
-    <div class="a-card">
-      <label class="a-muted">İsim</label>
+    <div class="a-card a-staff-form">
+      <label class="a-field-label">İsim</label>
       <input class="a-input" id="st-fn" placeholder="Ad" />
-      <label class="a-muted" style="display:block;margin-top:8px">Soyisim</label>
+      <label class="a-field-label">Soyisim</label>
       <input class="a-input" id="st-ln" placeholder="Soyad" />
-      <label class="a-muted" style="display:block;margin-top:8px">Telefon</label>
+      <label class="a-field-label">Telefon</label>
       <input class="a-input" id="st-phone" placeholder="+905…" />
-      <label class="a-muted" style="display:block;margin-top:8px">Rol</label>
+      <label class="a-field-label">Rol</label>
       <select class="a-select" id="st-role">
         <option value="CASHIER">CASHIER</option>
         <option value="COURIER">COURIER</option>
         <option value="ADMIN">ADMIN</option>
       </select>
-      <button type="button" class="a-btn" style="margin-top:10px" id="st-add">Ekle</button>
+      ${buttonHtml({ label: 'Ekle', id: 'st-add', icon: 'user-plus', classes: 'a-staff-add' })}
     </div>
-    <table class="a-table" style="margin-top:16px">
+    <div class="a-table-wrap a-staff-table"><table class="a-table">
       <thead><tr><th>Ad Soyad</th><th>Telefon</th><th>Rol</th><th></th></tr></thead>
       <tbody id="st-tbody">
-        ${list
+        ${list.length ? list
           .map((u) => {
             const id = String(u._id ?? u.id ?? '');
             const fn = u.firstName ?? '';
@@ -1183,24 +1260,26 @@ async function renderStaff(container) {
             return `<tr data-staff-id="${esc(id)}">
           <td class="st-name-cell">
             <span class="st-name-view">${esc(display)}</span>
-            <span class="st-name-edit" style="display:none">
+            <span class="st-name-edit">
               <input class="a-input st-edit-fn" value="${esc(fn)}" placeholder="Ad" />
-              <input class="a-input st-edit-ln" value="${esc(ln)}" placeholder="Soyad" style="margin-top:6px" />
+              <input class="a-input st-edit-ln a-login-field" value="${esc(ln)}" placeholder="Soyad" />
             </span>
           </td>
           <td>${esc(u.phoneE164)}</td>
           <td>${esc(u.role)}</td>
           <td class="st-actions-cell">
-            <button type="button" class="a-btn secondary st-edit">Düzenle</button>
-            <button type="button" class="a-btn st-save" style="display:none">Kaydet</button>
-            <button type="button" class="a-btn secondary st-cancel" style="display:none">İptal</button>
-            <button type="button" class="a-btn secondary a-del" data-id="${esc(id)}">Sil</button>
+            <div class="a-table-actions">
+              ${buttonHtml({ label: 'Düzenle', variant: 'secondary', size: 'compact', icon: 'pencil-simple', classes: 'st-edit' })}
+              ${buttonHtml({ label: 'Kaydet', size: 'compact', icon: 'check', classes: 'st-save' })}
+              ${buttonHtml({ label: 'İptal', variant: 'secondary', size: 'compact', icon: 'x', classes: 'st-cancel' })}
+              ${buttonHtml({ label: 'Sil', variant: 'danger', size: 'compact', icon: 'trash', classes: 'a-del', attrs: { 'data-id': id } })}
+            </div>
           </td>
         </tr>`;
           })
-          .join('')}
+          .join('') : emptyRowHtml('Personel kaydı yok', 4)}
       </tbody>
-    </table>`;
+    </table></div>`;
 
   const tbody = container.querySelector('#st-tbody');
   tbody.addEventListener('click', async (e) => {
@@ -1211,11 +1290,8 @@ async function renderStaff(container) {
     const staffId = tr.dataset.staffId;
 
     if (t.classList.contains('st-edit')) {
-      tr.querySelector('.st-name-view').style.display = 'none';
-      tr.querySelector('.st-name-edit').style.display = 'block';
-      tr.querySelector('.st-edit').style.display = 'none';
-      tr.querySelector('.st-save').style.display = 'inline-block';
-      tr.querySelector('.st-cancel').style.display = 'inline-block';
+      tr.classList.add('is-editing');
+      /** @type {HTMLElement | null} */ (tr.querySelector('.st-edit-fn'))?.focus();
       return;
     }
     if (t.classList.contains('st-cancel')) {
@@ -1226,18 +1302,22 @@ async function renderStaff(container) {
       const firstName = tr.querySelector('.st-edit-fn').value.trim();
       const lastName = tr.querySelector('.st-edit-ln').value.trim();
       if (firstName.length < 2 || lastName.length < 2) {
-        alert('İsim ve soyisim en az 2 karakter olmalı.');
+        showToast('İsim ve soyisim en az 2 karakter olmalı.', 'error');
+        /** @type {HTMLElement | null} */ (tr.querySelector(firstName.length < 2 ? '.st-edit-fn' : '.st-edit-ln'))?.focus();
         return;
       }
-      try {
-        await api(`/admin/staff/${staffId}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ firstName, lastName }),
-        });
-        await renderStaff(container);
-      } catch (err) {
-        alert(err.message);
-      }
+      await withButtonBusy(t, 'Kaydediliyor…', async () => {
+        try {
+          await api(`/admin/staff/${staffId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ firstName, lastName }),
+          });
+          showToast('Personel güncellendi.', 'success');
+          await renderStaff(container);
+        } catch (err) {
+          showToast(errorMessage(err), 'error');
+        }
+      });
     }
   });
 
@@ -1245,33 +1325,46 @@ async function renderStaff(container) {
     const firstName = container.querySelector('#st-fn').value.trim();
     const lastName = container.querySelector('#st-ln').value.trim();
     if (firstName.length < 2 || lastName.length < 2) {
-      alert('İsim ve soyisim en az 2 karakter olmalı.');
+      showToast('İsim ve soyisim en az 2 karakter olmalı.', 'error');
+      /** @type {HTMLElement | null} */ (container.querySelector(firstName.length < 2 ? '#st-fn' : '#st-ln'))?.focus();
       return;
     }
-    try {
-      await api('/admin/staff', {
-        method: 'POST',
-        body: JSON.stringify({
-          phone: container.querySelector('#st-phone').value.trim(),
-          role: container.querySelector('#st-role').value,
-          firstName,
-          lastName,
-        }),
-      });
-      await renderStaff(container);
-    } catch (e) {
-      alert(e.message);
-    }
+    await withButtonBusy(container.querySelector('#st-add'), 'Ekleniyor…', async () => {
+      try {
+        await api('/admin/staff', {
+          method: 'POST',
+          body: JSON.stringify({
+            phone: container.querySelector('#st-phone').value.trim(),
+            role: container.querySelector('#st-role').value,
+            firstName,
+            lastName,
+          }),
+        });
+        showToast('Personel eklendi.', 'success');
+        await renderStaff(container);
+      } catch (e) {
+        showToast(errorMessage(e), 'error');
+      }
+    });
   };
   container.querySelectorAll('.a-del').forEach((b) => {
     b.onclick = async () => {
-      if (!confirm('Silinsin mi?')) return;
-      try {
-        await api(`/admin/staff/${b.dataset.id}`, { method: 'DELETE' });
-        await renderStaff(container);
-      } catch (e) {
-        alert(e.message);
-      }
+      const ok = await showConfirmDialog({
+        title: 'Personel silinsin mi?',
+        message: 'Bu personel panel erişimini kaybedecek.',
+        confirmLabel: 'Sil',
+        variant: 'danger',
+      });
+      if (!ok) return;
+      await withButtonBusy(/** @type {HTMLElement} */ (b), 'Siliniyor…', async () => {
+        try {
+          await api(`/admin/staff/${b.dataset.id}`, { method: 'DELETE' });
+          showToast('Personel silindi.', 'success');
+          await renderStaff(container);
+        } catch (e) {
+          showToast(errorMessage(e), 'error');
+        }
+      });
     };
   });
 }
@@ -1286,44 +1379,56 @@ async function renderTables(container) {
   }
   container.innerHTML = `
     <h1 class="a-h1">Masalar</h1>
-    <div class="a-card">
-      <label class="a-muted">Yeni masa numarası (0 değil)</label>
-      <input class="a-input" type="number" id="tb-num" min="1" />
-      <input class="a-input" id="tb-label" placeholder="Etiket (opsiyonel)" />
-      <button type="button" class="a-btn" id="tb-add">Oluştur</button>
+    <div class="a-card a-form-stack">
+      <label class="a-field-label">Yeni masa numarası (0 değil)</label>
+      <div class="a-action-row">
+        <input class="a-input a-field-narrow" type="number" id="tb-num" min="1" placeholder="No" />
+        <input class="a-input" id="tb-label" placeholder="Etiket (opsiyonel)" />
+        ${buttonHtml({ label: 'Oluştur', id: 'tb-add', icon: 'plus-circle' })}
+      </div>
     </div>
-    <table class="a-table">
+    <div class="a-table-wrap"><table class="a-table">
       <thead><tr><th>No</th><th>Slug</th><th>URL</th><th>QR</th><th></th></tr></thead>
       <tbody>
-        ${list
+        ${list.length ? list
           .map(
             (t) => `<tr>
           <td>${esc(t.number)}</td>
           <td><code>${esc(t.publicSlug?.slice(0, 12))}…</code></td>
-          <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis"><a href="${esc(t.menuUrl)}" target="_blank" rel="noopener">${esc(t.menuUrl)}</a></td>
-          <td class="a-qr-cell"><button type="button" class="a-btn secondary a-dlqr" data-menu-url="${esc(t.menuUrl)}" data-num="${esc(String(t.number))}">Görseli indir</button></td>
+          <td class="a-cell-truncate"><a href="${esc(t.menuUrl)}" target="_blank" rel="noopener">${esc(t.menuUrl)}</a></td>
+          <td class="a-qr-cell">${buttonHtml({ label: 'Görseli indir', variant: 'secondary', size: 'compact', icon: 'download-simple', classes: 'a-dlqr', attrs: { 'data-menu-url': t.menuUrl, 'data-num': String(t.number) } })}</td>
           <td>
-            ${t.isSystem ? '<span class="a-muted">sistem</span>' : `<button type="button" class="a-btn secondary a-regqr" data-id="${esc(String(t._id))}">QR yenile</button>
-            <button type="button" class="a-btn secondary a-delt" data-id="${esc(String(t._id))}">Sil</button>`}
+            <div class="a-table-actions">
+              ${t.isSystem ? '<span class="a-muted">sistem</span>' : `${buttonHtml({ label: 'QR yenile', variant: 'secondary', size: 'compact', icon: 'arrows-clockwise', classes: 'a-regqr', attrs: { 'data-id': String(t._id) } })}
+              ${buttonHtml({ label: 'Sil', variant: 'danger', size: 'compact', icon: 'trash', classes: 'a-delt', attrs: { 'data-id': String(t._id) } })}`}
+            </div>
           </td>
         </tr>`,
           )
-          .join('')}
+          .join('') : emptyRowHtml('Masa kaydı yok', 5)}
       </tbody>
-    </table>`;
+    </table></div>`;
 
   container.querySelector('#tb-add').onclick = async () => {
     const number = Number(container.querySelector('#tb-num').value);
     const label = container.querySelector('#tb-label').value.trim();
-    try {
-      await api('/admin/tables', {
-        method: 'POST',
-        body: JSON.stringify({ number, label: label || undefined }),
-      });
-      await renderTables(container);
-    } catch (e) {
-      alert(e.message);
+    if (!Number.isFinite(number) || number <= 0) {
+      showToast('Geçerli bir masa numarası girin.', 'error');
+      /** @type {HTMLElement | null} */ (container.querySelector('#tb-num'))?.focus();
+      return;
     }
+    await withButtonBusy(container.querySelector('#tb-add'), 'Oluşturuluyor…', async () => {
+      try {
+        await api('/admin/tables', {
+          method: 'POST',
+          body: JSON.stringify({ number, label: label || undefined }),
+        });
+        showToast('Masa oluşturuldu.', 'success');
+        await renderTables(container);
+      } catch (e) {
+        showToast(errorMessage(e), 'error');
+      }
+    });
   };
   container.querySelectorAll('.a-dlqr').forEach((b) => {
     b.onclick = () => {
@@ -1336,25 +1441,37 @@ async function renderTables(container) {
     b.onclick = async () => {
       const ok = await showQrRegenerateTwoStepDialog();
       if (!ok) return;
-      try {
-        await api(`/admin/tables/${b.dataset.id}/regenerate-qr`, {
-          method: 'POST',
-        });
-        await renderTables(container);
-      } catch (e) {
-        alert(e.message);
-      }
+      await withButtonBusy(/** @type {HTMLElement} */ (b), 'Yenileniyor…', async () => {
+        try {
+          await api(`/admin/tables/${b.dataset.id}/regenerate-qr`, {
+            method: 'POST',
+          });
+          showToast('QR yenilendi.', 'success');
+          await renderTables(container);
+        } catch (e) {
+          showToast(errorMessage(e), 'error');
+        }
+      });
     };
   });
   container.querySelectorAll('.a-delt').forEach((b) => {
     b.onclick = async () => {
-      if (!confirm('Silinsin mi?')) return;
-      try {
-        await api(`/admin/tables/${b.dataset.id}`, { method: 'DELETE' });
-        await renderTables(container);
-      } catch (e) {
-        alert(e.message);
-      }
+      const ok = await showConfirmDialog({
+        title: 'Masa silinsin mi?',
+        message: 'Bu masa ve bağlantısı panelden kaldırılacak.',
+        confirmLabel: 'Sil',
+        variant: 'danger',
+      });
+      if (!ok) return;
+      await withButtonBusy(/** @type {HTMLElement} */ (b), 'Siliniyor…', async () => {
+        try {
+          await api(`/admin/tables/${b.dataset.id}`, { method: 'DELETE' });
+          showToast('Masa silindi.', 'success');
+          await renderTables(container);
+        } catch (e) {
+          showToast(errorMessage(e), 'error');
+        }
+      });
     };
   });
 }
@@ -1369,6 +1486,12 @@ async function renderMenuAdmin(container) {
   if (menuUi.sub === 'list') {
     await renderMenuList(container, {
       esc,
+      buttonHtml,
+      emptyRowHtml,
+      errorMessage,
+      showConfirmDialog,
+      showToast,
+      withButtonBusy,
       listUi: menuUi.list,
       refresh: () => renderMain().catch(console.error),
       onNewCategory: () => {
@@ -1394,6 +1517,10 @@ async function renderMenuAdmin(container) {
   if (menuUi.sub === 'category-new') {
     await renderCategoryFormPage(container, {
       esc,
+      buttonHtml,
+      errorMessage,
+      showToast,
+      withButtonBusy,
       mode: 'new',
       categoryId: null,
       onBack,
@@ -1404,6 +1531,10 @@ async function renderMenuAdmin(container) {
   if (menuUi.sub === 'category-edit') {
     await renderCategoryFormPage(container, {
       esc,
+      buttonHtml,
+      errorMessage,
+      showToast,
+      withButtonBusy,
       mode: 'edit',
       categoryId: menuUi.id,
       onBack,
@@ -1414,6 +1545,10 @@ async function renderMenuAdmin(container) {
   if (menuUi.sub === 'product-new') {
     await renderProductFormPage(container, {
       esc,
+      buttonHtml,
+      errorMessage,
+      showToast,
+      withButtonBusy,
       mode: 'new',
       productId: null,
       onBack,
@@ -1424,6 +1559,10 @@ async function renderMenuAdmin(container) {
   if (menuUi.sub === 'product-edit') {
     await renderProductFormPage(container, {
       esc,
+      buttonHtml,
+      errorMessage,
+      showToast,
+      withButtonBusy,
       mode: 'edit',
       productId: menuUi.id,
       onBack,
@@ -1480,9 +1619,9 @@ function renderApp(root) {
     <div class="a-layout">
       <aside class="a-side">
         <div class="a-brand"><span class="a-brand-logo" aria-hidden="true"></span>DAINO</div>
-        <p class="a-muted" style="margin-bottom:16px">${esc(r)}</p>
+        <p class="a-muted a-role-note">${esc(r)}</p>
         ${sideNav}
-        <button type="button" class="a-nav-btn" id="a-logout" style="margin-top:24px">Çıkış</button>
+        <button type="button" class="a-nav-btn a-logout" id="a-logout"><i class="ph ph-sign-out" aria-hidden="true"></i><span>Çıkış</span></button>
       </aside>
       <div>
         <div class="a-mnav" id="a-mnav"></div>

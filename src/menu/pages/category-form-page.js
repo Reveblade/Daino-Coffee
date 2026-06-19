@@ -5,20 +5,24 @@ import { idStr, catPath, pickImageFile, blockedParentIdsForCategory } from '../h
  * @param {HTMLElement} container
  * @param {object} ctx
  * @param {(s: string) => string} ctx.esc
+ * @param {(opts: any) => string} ctx.buttonHtml
+ * @param {(value: unknown) => string} ctx.errorMessage
+ * @param {(message: string, tone?: 'success' | 'error' | 'info') => void} ctx.showToast
+ * @param {(btn: HTMLElement | null | undefined, label: string, fn: () => Promise<unknown>) => Promise<unknown>} ctx.withButtonBusy
  * @param {'new' | 'edit'} ctx.mode
  * @param {string | null} ctx.categoryId
  * @param {() => void} ctx.onBack
  * @param {() => void | Promise<void>} [ctx.reload]
  */
 export async function renderCategoryFormPage(container, ctx) {
-  const { esc, mode, categoryId, onBack, reload } = ctx;
+  const { esc, buttonHtml, errorMessage, showToast, withButtonBusy, mode, categoryId, onBack, reload } = ctx;
 
   let cats = [];
   try {
     cats = await api('/admin/menu/categories');
   } catch (e) {
     container.innerHTML = `<p class="a-error">${esc(e.message)}</p>
-      <p><button type="button" class="a-btn secondary" id="cf-back-err">← Menü listesine</button></p>`;
+      <p>${buttonHtml({ label: 'Menü listesine', id: 'cf-back-err', variant: 'secondary', icon: 'arrow-left' })}</p>`;
     container.querySelector('#cf-back-err')?.addEventListener('click', onBack);
     return;
   }
@@ -34,7 +38,7 @@ export async function renderCategoryFormPage(container, ctx) {
     category = cats.find((c) => idStr(c) === categoryId) ?? null;
     if (!category) {
       container.innerHTML = `<p class="a-error">Kategori bulunamadı.</p>
-        <p><button type="button" class="a-btn secondary" id="cf-back-miss">← Menü listesine</button></p>`;
+        <p>${buttonHtml({ label: 'Menü listesine', id: 'cf-back-miss', variant: 'secondary', icon: 'arrow-left' })}</p>`;
       container.querySelector('#cf-back-miss')?.addEventListener('click', onBack);
       return;
     }
@@ -63,15 +67,15 @@ export async function renderCategoryFormPage(container, ctx) {
   container.innerHTML = `
     <div class="a-page-head">
       <div>
-        <p class="a-muted" style="margin:0 0 4px"><button type="button" class="a-btn secondary a-cf-back">← Menü listesi</button></p>
-        <h1 class="a-h1" style="margin-top:4px">${mode === 'new' ? 'Yeni kategori' : 'Kategori düzenle'}</h1>
-        <p class="a-muted" style="margin:0">${mode === 'new' ? 'Hiyerarşi için üst kategori seçebilirsiniz; sıra değeri menüdeki görünümü etkiler.' : 'Ad, üst kategori, sıra ve görünürlük ayarlarını güncelleyin.'}</p>
+        <p class="a-muted">${buttonHtml({ label: 'Menü listesi', variant: 'secondary', size: 'compact', icon: 'arrow-left', classes: 'a-cf-back' })}</p>
+        <h1 class="a-h1 a-h1--flush">${mode === 'new' ? 'Yeni kategori' : 'Kategori düzenle'}</h1>
+        <p class="a-muted">${mode === 'new' ? 'Hiyerarşi için üst kategori seçebilirsiniz; sıra değeri menüdeki görünümü etkiler.' : 'Ad, üst kategori, sıra ve görünürlük ayarlarını güncelleyin.'}</p>
       </div>
     </div>
 
     <div class="a-form-page-grid">
       <section class="a-card a-form-section">
-        <h2 class="a-h2" style="margin-top:0">Kategori bilgileri</h2>
+        <h2 class="a-h2 a-h2--flush">Kategori bilgileri</h2>
 
         <label class="a-field-label">Görünen ad</label>
         <input class="a-input" id="cf-name" maxlength="120" value="${esc(name)}" placeholder="Örn. Sıcak içecekler" />
@@ -83,7 +87,7 @@ export async function renderCategoryFormPage(container, ctx) {
         <select class="a-select" id="cf-parent">${parentOpts}</select>
 
         <label class="a-field-label">Liste sırası</label>
-        <input class="a-input" id="cf-sort" type="number" value="${esc(String(sortIx))}" style="max-width:160px" />
+        <input class="a-input a-field-narrow" id="cf-sort" type="number" value="${esc(String(sortIx))}" />
 
         ${
           mode === 'edit'
@@ -96,23 +100,23 @@ export async function renderCategoryFormPage(container, ctx) {
       </section>
 
       <section class="a-card a-form-section">
-        <h2 class="a-h2" style="margin-top:0">Kategori görseli</h2>
+        <h2 class="a-h2 a-h2--flush">Kategori görseli</h2>
         <p class="a-muted">Kare veya yatay görsel önerilir. Boş bırakılabilir.</p>
         <div id="cf-img-preview" class="a-cat-img-preview">
           ${imgUrl ? `<img src="${esc(imgUrl)}" alt="" />` : '<span class="a-muted">Görsel yok</span>'}
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
-          <button type="button" class="a-btn secondary" id="cf-upload">Görsel yükle</button>
-          ${imgUrl ? '<button type="button" class="a-btn secondary" id="cf-clear-img">Görseli kaldır</button>' : ''}
+        <div class="a-action-row a-section-top">
+          ${buttonHtml({ label: 'Görsel yükle', id: 'cf-upload', variant: 'secondary', icon: 'image-square' })}
+          ${imgUrl ? buttonHtml({ label: 'Görseli kaldır', id: 'cf-clear-img', variant: 'danger', icon: 'trash' }) : ''}
         </div>
       </section>
     </div>
 
     <div class="a-form-actions">
-      <button type="button" class="a-btn secondary a-cf-back">Vazgeç</button>
-      <button type="button" class="a-btn" id="cf-save">${mode === 'new' ? 'Kategoriyi oluştur' : 'Değişiklikleri kaydet'}</button>
+      ${buttonHtml({ label: 'Vazgeç', variant: 'secondary', classes: 'a-cf-back', icon: 'x' })}
+      ${buttonHtml({ label: mode === 'new' ? 'Kategoriyi oluştur' : 'Değişiklikleri kaydet', id: 'cf-save', icon: 'floppy-disk' })}
     </div>
-    <p class="a-error" id="cf-err" style="margin-top:12px"></p>`;
+    <p class="a-error" id="cf-err"></p>`;
 
   const selParent = /** @type {HTMLSelectElement} */ (container.querySelector('#cf-parent'));
   if (selParent && parentVal) selParent.value = parentVal;
@@ -134,7 +138,7 @@ export async function renderCategoryFormPage(container, ctx) {
     if (url) {
       const clr = document.createElement('button');
       clr.type = 'button';
-      clr.className = 'a-btn secondary';
+      clr.className = 'a-btn a-btn--danger';
       clr.id = 'cf-clear-img';
       clr.textContent = 'Görseli kaldır';
       clr.addEventListener('click', () => setPreview(''));
@@ -146,12 +150,15 @@ export async function renderCategoryFormPage(container, ctx) {
   container.querySelector('#cf-upload')?.addEventListener('click', async () => {
     const file = await pickImageFile();
     if (!file) return;
-    try {
-      const up = await uploadAdminImage(file);
-      setPreview(up.url);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    }
+    await withButtonBusy(container.querySelector('#cf-upload'), 'Yükleniyor…', async () => {
+      try {
+        const up = await uploadAdminImage(file);
+        setPreview(up.url);
+        showToast('Görsel yüklendi.', 'success');
+      } catch (e) {
+        showToast(errorMessage(e), 'error');
+      }
+    });
   });
 
   container.querySelector('#cf-clear-img')?.addEventListener('click', () => setPreview(''));
@@ -172,42 +179,46 @@ export async function renderCategoryFormPage(container, ctx) {
 
     if (!nameVal) {
       errEl.textContent = 'Kategori adı gerekli.';
+      /** @type {HTMLElement | null} */ (container.querySelector('#cf-name'))?.focus();
       return;
     }
 
     const sortIndexVal = Number.isFinite(sortIndex) ? sortIndex : 0;
 
-    try {
-      if (mode === 'new') {
-        await api('/admin/menu/categories', {
-          method: 'POST',
-          body: JSON.stringify({
-            name: nameVal,
-            description,
-            parentId: parentRaw || undefined,
-            sortIndex: sortIndexVal,
-            imageUrl: currentImageUrl || undefined,
-          }),
-        });
-        onBack();
-      } else {
-        await api(`/admin/menu/categories/${encodeURIComponent(categoryId ?? '')}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            name: nameVal,
-            description,
-            parentId: parentRaw || undefined,
-            sortIndex: sortIndexVal,
-            isActive,
-            imageUrl: currentImageUrl ? currentImageUrl : '',
-          }),
-        });
-        alert('Kaydedildi.');
-        if (reload) await reload();
-        else onBack();
+    await withButtonBusy(container.querySelector('#cf-save'), 'Kaydediliyor…', async () => {
+      try {
+        if (mode === 'new') {
+          await api('/admin/menu/categories', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: nameVal,
+              description,
+              parentId: parentRaw || undefined,
+              sortIndex: sortIndexVal,
+              imageUrl: currentImageUrl || undefined,
+            }),
+          });
+          showToast('Kategori oluşturuldu.', 'success');
+          onBack();
+        } else {
+          await api(`/admin/menu/categories/${encodeURIComponent(categoryId ?? '')}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              name: nameVal,
+              description,
+              parentId: parentRaw || undefined,
+              sortIndex: sortIndexVal,
+              isActive,
+              imageUrl: currentImageUrl ? currentImageUrl : '',
+            }),
+          });
+          showToast('Kategori kaydedildi.', 'success');
+          if (reload) await reload();
+          else onBack();
+        }
+      } catch (e) {
+        errEl.textContent = errorMessage(e);
       }
-    } catch (e) {
-      errEl.textContent = e instanceof Error ? e.message : String(e);
-    }
+    });
   });
 }

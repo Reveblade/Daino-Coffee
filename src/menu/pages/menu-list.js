@@ -33,6 +33,12 @@ function parsePaged(body, fallbackPageSize) {
  * @param {HTMLElement} container
  * @param {object} ctx
  * @param {(s: string) => string} ctx.esc
+ * @param {(opts: any) => string} ctx.buttonHtml
+ * @param {(message: string, colspan: number) => string} ctx.emptyRowHtml
+ * @param {(value: unknown) => string} ctx.errorMessage
+ * @param {(opts: any) => Promise<unknown>} ctx.showConfirmDialog
+ * @param {(message: string, tone?: 'success' | 'error' | 'info') => void} ctx.showToast
+ * @param {(btn: HTMLElement | null | undefined, label: string, fn: () => Promise<unknown>) => Promise<unknown>} ctx.withButtonBusy
  * @param {object} ctx.listUi
  * @param {number} ctx.listUi.catPage
  * @param {number} ctx.listUi.catPageSize
@@ -49,6 +55,12 @@ function parsePaged(body, fallbackPageSize) {
 export async function renderMenuList(container, ctx) {
   const {
     esc,
+    buttonHtml,
+    emptyRowHtml,
+    errorMessage,
+    showConfirmDialog,
+    showToast,
+    withButtonBusy,
     listUi,
     refresh,
     onNewCategory,
@@ -133,12 +145,14 @@ export async function renderMenuList(container, ctx) {
       const active = c.isActive !== false;
       return `<tr>
         <td>${esc(catPath(c, catsForPath))}</td>
-        <td style="text-align:center;width:64px">${thumb}</td>
+        <td class="a-cell-thumb">${thumb}</td>
         <td>${c.sortIndex ?? 0}</td>
         <td>${active ? 'aktif' : 'pasif'}</td>
-        <td style="white-space:nowrap">
-          <button type="button" class="a-btn secondary a-menu-edit-cat" data-id="${id}">Düzenle</button>
-          <button type="button" class="a-btn secondary a-menu-del-cat" data-id="${id}">Sil</button>
+        <td>
+          <div class="a-table-actions">
+            ${buttonHtml({ label: 'Düzenle', variant: 'secondary', size: 'compact', icon: 'pencil-simple', classes: 'a-menu-edit-cat', attrs: { 'data-id': id } })}
+            ${buttonHtml({ label: 'Sil', variant: 'danger', size: 'compact', icon: 'trash', classes: 'a-menu-del-cat', attrs: { 'data-id': id } })}
+          </div>
         </td>
       </tr>`;
     })
@@ -155,15 +169,17 @@ export async function renderMenuList(container, ctx) {
         ? `<img src="${esc(p.images[0].url)}" alt="" class="a-menu-thumb" />`
         : '<span class="a-muted">—</span>';
       return `<tr>
-        <td style="text-align:center;width:64px">${pthumb}</td>
+        <td class="a-cell-thumb">${pthumb}</td>
         <td>${esc(p.name)}</td>
-        <td class="a-muted" style="max-width:200px;overflow:hidden;text-overflow:ellipsis">${esc(cname)}</td>
+        <td class="a-muted a-cell-truncate">${esc(cname)}</td>
         <td>${(Number(p.priceKurus) / 100).toFixed(2)} ₺</td>
         <td>${avail ? 'satışta' : 'kapalı'}</td>
-        <td style="white-space:nowrap">
-          <button type="button" class="a-btn secondary a-menu-edit-p" data-id="${pid}">Düzenle</button>
-          <button type="button" class="a-btn secondary a-menu-toggle-p" data-id="${pid}" data-avail="${avail ? '1' : '0'}">${avail ? 'Kapat' : 'Aç'}</button>
-          <button type="button" class="a-btn secondary a-menu-del-p" data-id="${pid}">Sil</button>
+        <td>
+          <div class="a-table-actions">
+            ${buttonHtml({ label: 'Düzenle', variant: 'secondary', size: 'compact', icon: 'pencil-simple', classes: 'a-menu-edit-p', attrs: { 'data-id': pid } })}
+            ${buttonHtml({ label: avail ? 'Kapat' : 'Aç', variant: 'secondary', size: 'compact', icon: avail ? 'eye-slash' : 'eye', classes: 'a-menu-toggle-p', attrs: { 'data-id': pid, 'data-avail': avail ? '1' : '0' } })}
+            ${buttonHtml({ label: 'Sil', variant: 'danger', size: 'compact', icon: 'trash', classes: 'a-menu-del-p', attrs: { 'data-id': pid } })}
+          </div>
         </td>
       </tr>`;
     })
@@ -182,49 +198,49 @@ export async function renderMenuList(container, ctx) {
   container.innerHTML = `
     <div class="a-page-head">
       <div>
-        <h1 class="a-h1" style="margin-bottom:4px">Menü</h1>
-        <p class="a-muted" style="margin:0">Kategorileri ve ürünleri yönetin. Düzenlemeler ayrı sayfalarda açılır.</p>
+        <h1 class="a-h1 a-h1--flush">Menü</h1>
+        <p class="a-muted">Kategorileri ve ürünleri yönetin. Düzenlemeler ayrı sayfalarda açılır.</p>
       </div>
       <div class="a-page-head__actions">
-        <button type="button" class="a-btn secondary" id="menu-goto-cat-new">Yeni kategori</button>
-        <button type="button" class="a-btn" id="menu-goto-prod-new">Yeni ürün</button>
+        ${buttonHtml({ label: 'Yeni kategori', id: 'menu-goto-cat-new', variant: 'secondary', icon: 'folder-plus', classes: 'a-menu-head-btn' })}
+        ${buttonHtml({ label: 'Yeni ürün', id: 'menu-goto-prod-new', icon: 'plus-circle', classes: 'a-menu-head-btn' })}
       </div>
     </div>
 
     <h2 class="a-h2">Kategoriler (${catTotal})</h2>
     <form class="a-history-toolbar" id="menu-cat-search" role="search">
       <input class="a-input a-history-q" type="search" id="menu-cat-q" name="q" placeholder="Kategori adı veya açıklama ara…" value="${esc(listUi.catQ)}" autocomplete="off" />
-      <button type="submit" class="a-btn">Ara</button>
+      ${buttonHtml({ label: 'Ara', type: 'submit', icon: 'magnifying-glass' })}
     </form>
     <p class="a-muted" id="menu-cat-range">${esc(`${catFrom}–${catTo} / ${catTotal} kayıt`)}</p>
-    <div style="overflow:auto;margin-bottom:24px">
+    <div class="a-table-wrap">
       <table class="a-table">
         <thead><tr><th>Kategori</th><th>Görsel</th><th>Sıra</th><th>Durum</th><th></th></tr></thead>
-        <tbody>${catRows || '<tr><td colspan="5" class="a-muted">Kayıt yok</td></tr>'}</tbody>
+        <tbody>${catRows || emptyRowHtml('Kategori kaydı yok', 5)}</tbody>
       </table>
     </div>
-    <div class="a-history-pager" style="margin-bottom:28px">
-      <button type="button" class="a-btn secondary" id="menu-cat-prev" ${catHasPrev ? '' : 'disabled'}>Önceki</button>
+    <div class="a-history-pager">
+      ${buttonHtml({ label: 'Önceki', id: 'menu-cat-prev', variant: 'secondary', icon: 'caret-left', disabled: !catHasPrev })}
       <span class="a-muted">Sayfa ${esc(String(listUi.catPage + 1))}</span>
-      <button type="button" class="a-btn secondary" id="menu-cat-next" ${catHasNext ? '' : 'disabled'}>Sonraki</button>
+      ${buttonHtml({ label: 'Sonraki', id: 'menu-cat-next', variant: 'secondary', icon: 'caret-right', disabled: !catHasNext })}
     </div>
 
     <h2 class="a-h2">Ürünler (${prodTotal})</h2>
     <form class="a-history-toolbar" id="menu-prod-search" role="search">
       <input class="a-input a-history-q" type="search" id="menu-prod-q" name="q" placeholder="Ürün veya kategori adı ara…" value="${esc(listUi.prodQ)}" autocomplete="off" />
-      <button type="submit" class="a-btn">Ara</button>
+      ${buttonHtml({ label: 'Ara', type: 'submit', icon: 'magnifying-glass' })}
     </form>
     <p class="a-muted" id="menu-prod-range">${esc(`${prodFrom}–${prodTo} / ${prodTotal} kayıt`)}</p>
-    <div style="overflow:auto">
+    <div class="a-table-wrap">
       <table class="a-table">
         <thead><tr><th>Görsel</th><th>Ad</th><th>Kategori</th><th>Fiyat</th><th>Durum</th><th></th></tr></thead>
-        <tbody>${prodRows || '<tr><td colspan="6" class="a-muted">Kayıt yok</td></tr>'}</tbody>
+        <tbody>${prodRows || emptyRowHtml('Ürün kaydı yok', 6)}</tbody>
       </table>
     </div>
     <div class="a-history-pager">
-      <button type="button" class="a-btn secondary" id="menu-prod-prev" ${prodHasPrev ? '' : 'disabled'}>Önceki</button>
+      ${buttonHtml({ label: 'Önceki', id: 'menu-prod-prev', variant: 'secondary', icon: 'caret-left', disabled: !prodHasPrev })}
       <span class="a-muted">Sayfa ${esc(String(listUi.prodPage + 1))}</span>
-      <button type="button" class="a-btn secondary" id="menu-prod-next" ${prodHasNext ? '' : 'disabled'}>Sonraki</button>
+      ${buttonHtml({ label: 'Sonraki', id: 'menu-prod-next', variant: 'secondary', icon: 'caret-right', disabled: !prodHasNext })}
     </div>`;
 
   container.querySelector('#menu-goto-cat-new')?.addEventListener('click', onNewCategory);
@@ -277,25 +293,43 @@ export async function renderMenuList(container, ctx) {
 
   container.querySelectorAll('.a-menu-del-cat').forEach((b) => {
     b.addEventListener('click', async () => {
-      if (!confirm('Bu kategori silinsin mi? (Alt kategori veya ürün varsa silinmez.)')) return;
-      try {
-        await api(`/admin/menu/categories/${b.dataset.id}`, { method: 'DELETE' });
-        await renderMenuList(container, ctx);
-      } catch (e) {
-        alert(e.message);
-      }
+      const ok = await showConfirmDialog({
+        title: 'Kategori silinsin mi?',
+        message: 'Alt kategori veya ürün varsa silinmez. Uygunsa kategori kalıcı olarak kaldırılır.',
+        confirmLabel: 'Sil',
+        variant: 'danger',
+      });
+      if (!ok) return;
+      await withButtonBusy(/** @type {HTMLElement} */ (b), 'Siliniyor…', async () => {
+        try {
+          await api(`/admin/menu/categories/${b.dataset.id}`, { method: 'DELETE' });
+          showToast('Kategori silindi.', 'success');
+          await renderMenuList(container, ctx);
+        } catch (e) {
+          showToast(errorMessage(e), 'error');
+        }
+      });
     });
   });
 
   container.querySelectorAll('.a-menu-del-p').forEach((b) => {
     b.addEventListener('click', async () => {
-      if (!confirm('Bu ürün silinsin mi?')) return;
-      try {
-        await api(`/admin/menu/products/${b.dataset.id}`, { method: 'DELETE' });
-        await renderMenuList(container, ctx);
-      } catch (e) {
-        alert(e.message);
-      }
+      const ok = await showConfirmDialog({
+        title: 'Ürün silinsin mi?',
+        message: 'Ürün menüden kalıcı olarak kaldırılır.',
+        confirmLabel: 'Sil',
+        variant: 'danger',
+      });
+      if (!ok) return;
+      await withButtonBusy(/** @type {HTMLElement} */ (b), 'Siliniyor…', async () => {
+        try {
+          await api(`/admin/menu/products/${b.dataset.id}`, { method: 'DELETE' });
+          showToast('Ürün silindi.', 'success');
+          await renderMenuList(container, ctx);
+        } catch (e) {
+          showToast(errorMessage(e), 'error');
+        }
+      });
     });
   });
 
@@ -303,15 +337,18 @@ export async function renderMenuList(container, ctx) {
     btn.addEventListener('click', async () => {
       const el = /** @type {HTMLButtonElement} */ (btn);
       const next = el.dataset.avail !== '1';
-      try {
-        await api(`/admin/menu/products/${el.dataset.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ isAvailable: next }),
-        });
-        await renderMenuList(container, ctx);
-      } catch (e) {
-        alert(e.message);
-      }
+      await withButtonBusy(el, 'Güncelleniyor…', async () => {
+        try {
+          await api(`/admin/menu/products/${el.dataset.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ isAvailable: next }),
+          });
+          showToast(next ? 'Ürün satışa açıldı.' : 'Ürün satışa kapatıldı.', 'success');
+          await renderMenuList(container, ctx);
+        } catch (e) {
+          showToast(errorMessage(e), 'error');
+        }
+      });
     });
   });
 }

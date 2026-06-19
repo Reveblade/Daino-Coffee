@@ -20,8 +20,6 @@ function renderChoiceRows(wrap, choices) {
     const row = document.createElement('div');
     row.className = 'a-pog-choice-row';
     row.dataset.choiceId = ch.id || '';
-    row.style.cssText =
-      'display:grid;grid-template-columns:1fr minmax(88px,110px) auto;gap:8px;align-items:center;margin-bottom:8px';
     const labInp = document.createElement('input');
     labInp.type = 'text';
     labInp.className = 'a-input a-pog-clabel';
@@ -42,8 +40,8 @@ function renderChoiceRows(wrap, choices) {
         : '';
     const rm = document.createElement('button');
     rm.type = 'button';
-    rm.className = 'a-btn secondary a-pog-rm-choice';
-    rm.textContent = 'Satırı kaldır';
+    rm.className = 'a-btn a-btn--danger a-btn--compact a-pog-rm-choice';
+    rm.textContent = 'Kaldır';
     rm.addEventListener('click', () => {
       row.remove();
       const h = wrap.querySelector('.a-pog-choices-host');
@@ -97,8 +95,7 @@ export function mountProductOptionGroupsForm(panel, initialGroups, productNameHi
   function renderInner() {
     panel.innerHTML = '';
     const title = document.createElement('h2');
-    title.className = 'a-h2';
-    title.style.marginTop = '0';
+    title.className = 'a-h2 a-h2--flush';
     title.textContent = 'Seçenek grupları';
     panel.appendChild(title);
     const lead = document.createElement('p');
@@ -113,18 +110,16 @@ export function mountProductOptionGroupsForm(panel, initialGroups, productNameHi
       const wrap = document.createElement('div');
       wrap.className = 'a-prod-opt-group a-card';
       wrap.dataset.groupId = gid;
-      wrap.style.cssText = 'padding:12px;margin-bottom:10px';
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px';
+      row.className = 'a-pog-group-head';
       const inpLabel = document.createElement('input');
       inpLabel.type = 'text';
       inpLabel.className = 'a-input a-pog-label';
       inpLabel.placeholder = 'Grup başlığı (örn. Ekstralar, Süt)';
       inpLabel.value = g.label ?? '';
-      inpLabel.style.cssText = 'flex:1;min-width:160px';
+      inpLabel.classList.add('a-pog-group-name');
       const selKind = document.createElement('select');
       selKind.className = 'a-select a-pog-kind';
-      selKind.style.maxWidth = '200px';
       [['SELECTABLE', 'Çoklu seçim'], ['SINGLE', 'Tek seçim']].forEach(([v, t]) => {
         const o = document.createElement('option');
         o.value = v;
@@ -134,15 +129,13 @@ export function mountProductOptionGroupsForm(panel, initialGroups, productNameHi
       });
       const rm = document.createElement('button');
       rm.type = 'button';
-      rm.className = 'a-btn secondary a-pog-remove';
+      rm.className = 'a-btn a-btn--danger a-btn--compact a-pog-remove';
       rm.textContent = 'Grubu kaldır';
       rm.dataset.groupId = gid;
       row.append(inpLabel, selKind, rm);
 
       const headRow = document.createElement('div');
-      headRow.className = 'a-muted';
-      headRow.style.cssText =
-        'display:grid;grid-template-columns:1fr minmax(88px,110px) auto;gap:8px;font-size:0.78rem;margin:10px 0 4px;text-transform:uppercase;letter-spacing:0.04em';
+      headRow.className = 'a-muted a-pog-choice-head';
       headRow.innerHTML =
         '<span>Seçenek adı</span><span>Ek (₺)</span><span></span>';
 
@@ -151,8 +144,7 @@ export function mountProductOptionGroupsForm(panel, initialGroups, productNameHi
 
       const addChoice = document.createElement('button');
       addChoice.type = 'button';
-      addChoice.className = 'a-btn secondary';
-      addChoice.style.marginTop = '6px';
+      addChoice.className = 'a-btn a-btn--secondary a-btn--compact';
       addChoice.textContent = 'Seçenek satırı ekle';
       addChoice.addEventListener('click', () => {
         const h = wrap.querySelector('.a-pog-choices-host');
@@ -160,8 +152,6 @@ export function mountProductOptionGroupsForm(panel, initialGroups, productNameHi
         const row = document.createElement('div');
         row.className = 'a-pog-choice-row';
         row.dataset.choiceId = '';
-        row.style.cssText =
-          'display:grid;grid-template-columns:1fr minmax(88px,110px) auto;gap:8px;align-items:center;margin-bottom:8px';
         const labInp = document.createElement('input');
         labInp.type = 'text';
         labInp.className = 'a-input a-pog-clabel';
@@ -173,8 +163,8 @@ export function mountProductOptionGroupsForm(panel, initialGroups, productNameHi
         priceInp.title = 'Ek fiyat (₺)';
         const rmC = document.createElement('button');
         rmC.type = 'button';
-        rmC.className = 'a-btn secondary a-pog-rm-choice';
-        rmC.textContent = 'Satırı kaldır';
+        rmC.className = 'a-btn a-btn--danger a-btn--compact a-pog-rm-choice';
+        rmC.textContent = 'Kaldır';
         rmC.addEventListener('click', () => {
           row.remove();
           if (!h.querySelector('.a-pog-choice-row')) {
@@ -209,10 +199,10 @@ export function mountProductOptionGroupsForm(panel, initialGroups, productNameHi
     panel.appendChild(list);
 
     const actions = document.createElement('div');
-    actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-top:12px';
+    actions.className = 'a-pog-actions';
     const addBtn = document.createElement('button');
     addBtn.type = 'button';
-    addBtn.className = 'a-btn secondary';
+    addBtn.className = 'a-btn a-btn--secondary';
     addBtn.textContent = 'Grup ekle';
     addBtn.addEventListener('click', () => {
       collectFromPanel();

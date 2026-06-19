@@ -6,13 +6,17 @@ import { mountProductOptionGroupsForm } from '../product-option-groups.js';
  * @param {HTMLElement} container
  * @param {object} ctx
  * @param {(s: string) => string} ctx.esc
+ * @param {(opts: any) => string} ctx.buttonHtml
+ * @param {(value: unknown) => string} ctx.errorMessage
+ * @param {(message: string, tone?: 'success' | 'error' | 'info') => void} ctx.showToast
+ * @param {(btn: HTMLElement | null | undefined, label: string, fn: () => Promise<unknown>) => Promise<unknown>} ctx.withButtonBusy
  * @param {'new' | 'edit'} ctx.mode
  * @param {string | null} ctx.productId
  * @param {() => void} ctx.onBack
  * @param {() => void | Promise<void>} [ctx.reload] Düzenleme kaydından sonra formu yenilemek için
  */
 export async function renderProductFormPage(container, ctx) {
-  const { esc, mode, productId, onBack, reload } = ctx;
+  const { esc, buttonHtml, errorMessage, showToast, withButtonBusy, mode, productId, onBack, reload } = ctx;
 
   let cats = [];
   let prods = [];
@@ -21,7 +25,7 @@ export async function renderProductFormPage(container, ctx) {
     prods = await api('/admin/menu/products');
   } catch (e) {
     container.innerHTML = `<p class="a-error">${esc(e.message)}</p>
-      <p><button type="button" class="a-btn secondary" id="pf-back-err">← Menü listesine</button></p>`;
+      <p>${buttonHtml({ label: 'Menü listesine', id: 'pf-back-err', variant: 'secondary', icon: 'arrow-left' })}</p>`;
     container.querySelector('#pf-back-err')?.addEventListener('click', onBack);
     return;
   }
@@ -34,7 +38,7 @@ export async function renderProductFormPage(container, ctx) {
 
   if (!catsSorted.length) {
     container.innerHTML = `
-      <p class="a-muted"><button type="button" class="a-btn secondary" id="pf-back-nc">← Menü listesi</button></p>
+      <p class="a-muted">${buttonHtml({ label: 'Menü listesi', id: 'pf-back-nc', variant: 'secondary', icon: 'arrow-left' })}</p>
       <p class="a-error">Önce en az bir kategori oluşturmalısınız.</p>`;
     container.querySelector('#pf-back-nc')?.addEventListener('click', onBack);
     return;
@@ -53,7 +57,7 @@ export async function renderProductFormPage(container, ctx) {
     product = prods.find((p) => idStr(p) === productId) ?? null;
     if (!product) {
       container.innerHTML = `<p class="a-error">Ürün bulunamadı.</p>
-        <p><button type="button" class="a-btn secondary" id="pf-back-miss">← Menü listesine</button></p>`;
+        <p>${buttonHtml({ label: 'Menü listesine', id: 'pf-back-miss', variant: 'secondary', icon: 'arrow-left' })}</p>`;
       container.querySelector('#pf-back-miss')?.addEventListener('click', onBack);
       return;
     }
@@ -76,15 +80,15 @@ export async function renderProductFormPage(container, ctx) {
   container.innerHTML = `
     <div class="a-page-head">
       <div>
-        <p class="a-muted" style="margin:0 0 4px"><button type="button" class="a-btn secondary a-pf-back">← Menü listesi</button></p>
-        <h1 class="a-h1" style="margin-top:4px">${mode === 'new' ? 'Yeni ürün' : 'Ürün düzenle'}</h1>
-        <p class="a-muted" style="margin:0">${mode === 'new' ? 'Kategori, fiyat ve isteğe bağlı seçenek gruplarını tanımlayın.' : 'Tüm alanları güncelleyebilirsiniz; kayıt anında menü canlıya yansır.'}</p>
+        <p class="a-muted">${buttonHtml({ label: 'Menü listesi', variant: 'secondary', size: 'compact', icon: 'arrow-left', classes: 'a-pf-back' })}</p>
+        <h1 class="a-h1 a-h1--flush">${mode === 'new' ? 'Yeni ürün' : 'Ürün düzenle'}</h1>
+        <p class="a-muted">${mode === 'new' ? 'Kategori, fiyat ve isteğe bağlı seçenek gruplarını tanımlayın.' : 'Tüm alanları güncelleyebilirsiniz; kayıt anında menü canlıya yansır.'}</p>
       </div>
     </div>
 
     <div class="a-form-page-grid">
       <section class="a-card a-form-section">
-        <h2 class="a-h2" style="margin-top:0">Temel bilgiler</h2>
+        <h2 class="a-h2 a-h2--flush">Temel bilgiler</h2>
         <label class="a-field-label">Kategori</label>
         <select class="a-select a-pf-cat" id="pf-cat">${catOpts}</select>
 
@@ -112,22 +116,22 @@ export async function renderProductFormPage(container, ctx) {
       </section>
 
       <section class="a-card a-form-section">
-        <h2 class="a-h2" style="margin-top:0">Görseller</h2>
+        <h2 class="a-h2 a-h2--flush">Görseller</h2>
         <p class="a-muted">Birden fazla görsel ekleyebilirsiniz. İlk görsel liste önizlemesinde kullanılır.</p>
         <div id="pf-images" class="a-image-strip"></div>
-        <button type="button" class="a-btn secondary" id="pf-add-img">Görsel yükle</button>
+        ${buttonHtml({ label: 'Görsel yükle', id: 'pf-add-img', variant: 'secondary', icon: 'image-square' })}
       </section>
     </div>
 
-    <section class="a-card a-form-section" style="margin-top:16px">
+    <section class="a-card a-form-section a-section-top">
       <div id="pf-options-root"></div>
     </section>
 
     <div class="a-form-actions">
-      <button type="button" class="a-btn secondary a-pf-back">Vazgeç</button>
-      <button type="button" class="a-btn" id="pf-save">${mode === 'new' ? 'Ürünü oluştur' : 'Değişiklikleri kaydet'}</button>
+      ${buttonHtml({ label: 'Vazgeç', variant: 'secondary', classes: 'a-pf-back', icon: 'x' })}
+      ${buttonHtml({ label: mode === 'new' ? 'Ürünü oluştur' : 'Değişiklikleri kaydet', id: 'pf-save', icon: 'floppy-disk' })}
     </div>
-    <p class="a-error" id="pf-err" style="margin-top:12px"></p>`;
+    <p class="a-error" id="pf-err"></p>`;
 
   const selCat = /** @type {HTMLSelectElement} */ (container.querySelector('#pf-cat'));
   if (selCat && initialCat) selCat.value = initialCat;
@@ -148,7 +152,7 @@ export async function renderProductFormPage(container, ctx) {
         (im, idx) => `
       <div class="a-image-tile" data-idx="${idx}">
         <img src="${esc(im.url)}" alt="" />
-        <button type="button" class="a-btn secondary a-pf-rm-img" data-idx="${idx}">Kaldır</button>
+        ${buttonHtml({ label: 'Kaldır', variant: 'danger', size: 'compact', icon: 'trash', classes: 'a-pf-rm-img', attrs: { 'data-idx': idx } })}
       </div>`,
       )
       .join('');
@@ -170,13 +174,16 @@ export async function renderProductFormPage(container, ctx) {
   container.querySelector('#pf-add-img')?.addEventListener('click', async () => {
     const file = await pickImageFile();
     if (!file) return;
-    try {
-      const up = await uploadAdminImage(file);
-      localImages.push({ url: up.url, publicId: up.publicId });
-      renderImages();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    }
+    await withButtonBusy(container.querySelector('#pf-add-img'), 'Yükleniyor…', async () => {
+      try {
+        const up = await uploadAdminImage(file);
+        localImages.push({ url: up.url, publicId: up.publicId });
+        renderImages();
+        showToast('Görsel yüklendi.', 'success');
+      } catch (e) {
+        showToast(errorMessage(e), 'error');
+      }
+    });
   });
 
   const errEl = /** @type {HTMLElement} */ (container.querySelector('#pf-err'));
@@ -197,14 +204,17 @@ export async function renderProductFormPage(container, ctx) {
 
     if (!categoryId) {
       errEl.textContent = 'Kategori seçin.';
+      selCat?.focus();
       return;
     }
     if (!nameVal) {
       errEl.textContent = 'Ürün adı gerekli.';
+      /** @type {HTMLElement | null} */ (container.querySelector('#pf-name'))?.focus();
       return;
     }
     if (kurus === null) {
       errEl.textContent = 'Geçerli bir fiyat girin.';
+      /** @type {HTMLElement | null} */ (container.querySelector('#pf-price'))?.focus();
       return;
     }
 
@@ -224,34 +234,37 @@ export async function renderProductFormPage(container, ctx) {
       optionGroups: og.optionGroups,
     };
 
-    try {
-      if (mode === 'new') {
-        await api('/admin/menu/products', {
-          method: 'POST',
-          body: JSON.stringify(body),
-        });
-        onBack();
-      } else {
-        await api(`/admin/menu/products/${encodeURIComponent(productId ?? '')}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            name: body.name,
-            description: body.description,
-            priceKurus: body.priceKurus,
-            sortIndex: body.sortIndex,
-            categoryId: body.categoryId,
-            images: body.images,
-            isAvailable,
-            optionGroups: body.optionGroups,
-          }),
-        });
-        errEl.textContent = '';
-        alert('Kaydedildi.');
-        if (reload) await reload();
-        else onBack();
+    await withButtonBusy(container.querySelector('#pf-save'), 'Kaydediliyor…', async () => {
+      try {
+        if (mode === 'new') {
+          await api('/admin/menu/products', {
+            method: 'POST',
+            body: JSON.stringify(body),
+          });
+          showToast('Ürün oluşturuldu.', 'success');
+          onBack();
+        } else {
+          await api(`/admin/menu/products/${encodeURIComponent(productId ?? '')}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              name: body.name,
+              description: body.description,
+              priceKurus: body.priceKurus,
+              sortIndex: body.sortIndex,
+              categoryId: body.categoryId,
+              images: body.images,
+              isAvailable,
+              optionGroups: body.optionGroups,
+            }),
+          });
+          errEl.textContent = '';
+          showToast('Ürün kaydedildi.', 'success');
+          if (reload) await reload();
+          else onBack();
+        }
+      } catch (e) {
+        errEl.textContent = errorMessage(e);
       }
-    } catch (e) {
-      errEl.textContent = e instanceof Error ? e.message : String(e);
-    }
+    });
   });
 }
