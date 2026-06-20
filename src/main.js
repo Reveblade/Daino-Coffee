@@ -582,6 +582,7 @@ function liveOrderEmphasisLabel(o) {
 /** @param {object} o */
 function cashierWorkState(o) {
   const st = o?.status;
+  const isPosPayment = o?.collectionMethod === 'POS';
   if (o?.channel === 'IN_PLACE') {
     if (st === 'PLACED') {
       return {
@@ -654,7 +655,9 @@ function cashierWorkState(o) {
       tone: 'payment',
       priority: 1,
       label: 'Ödeme bekliyor',
-      note: 'Teslimat tamamlandı, kasiyer ödemeyi kapatmalı.',
+      note: isPosPayment
+        ? 'POS tahsilatı yapıldı, kasiyer fişi onaylamalı.'
+        : 'Teslimat tamamlandı, kasiyer ödemeyi kapatmalı.',
     };
   }
   if (st === 'ASSIGNED') {
@@ -697,10 +700,11 @@ function orderFlowActionsInnerHtml(o) {
   const admin = [];
   const step = primaryFlowStep(o);
   const adminHasComplete = canAdminCompleteOrder(o);
+  const markPaidLabel = o.collectionMethod === 'POS' ? 'Fiş aldım' : 'Ödemeyi Aldım';
   if (step?.kind === 'transition' && !(adminHasComplete && step.act === 'MARK_PAID')) {
     flow.push(
       buttonHtml({
-        label: step.actionLabel,
+        label: step.act === 'MARK_PAID' ? markPaidLabel : step.actionLabel,
         size: 'compact',
         classes: 'a-act',
         attrs: { 'data-id': id, 'data-ch': chEsc, 'data-act': step.act },
@@ -720,7 +724,7 @@ function orderFlowActionsInnerHtml(o) {
     );
   }
   if (adminHasComplete) {
-    const completeLabel = step?.act === 'MARK_PAID' ? 'Ödemeyi Aldım' : 'Siparişi Tamamla';
+    const completeLabel = step?.act === 'MARK_PAID' ? markPaidLabel : 'Siparişi Tamamla';
     admin.push(
       buttonHtml({
         label: completeLabel,
@@ -728,7 +732,12 @@ function orderFlowActionsInnerHtml(o) {
         size: 'compact',
         icon: 'check-circle',
         classes: 'a-act',
-        attrs: { 'data-id': id, 'data-ch': chEsc, 'data-act': 'COMPLETE' },
+        attrs: {
+          'data-id': id,
+          'data-ch': chEsc,
+          'data-act': 'COMPLETE',
+          'data-collection-method': o.collectionMethod ?? '',
+        },
       }),
     );
   }
@@ -840,6 +849,17 @@ function courierSelectDisplayText(c) {
   return full || (c.phoneE164 ? formatPhoneTrDisplay(c.phoneE164) || c.phoneE164 : '') || 'Kurye';
 }
 
+/** @param {unknown[]} couriers */
+function uniqueCouriersById(couriers) {
+  const seen = new Set();
+  return couriers.filter((c) => {
+    const id = c?._id != null ? String(c._id) : '';
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+}
+
 /** @param {object} o @returns {string} */
 function liveOrderCardHtml(o) {
   const rawId = idStr(o);
@@ -856,6 +876,9 @@ function liveOrderCardHtml(o) {
   const pendingAdditionsHtml = pendingInPlaceAdditionsHtml(o);
   const createdAt = esc(formatTimeTr(o.createdAt));
   const total = esc(formatTryFromKurus(o.totalKurus));
+  const collectionMethod = o.collectionMethod
+    ? `<span><small>Tahsilat</small><strong>${esc(o.collectionMethod === 'POS' ? 'POS' : 'Nakit')}</strong></span>`
+    : '';
   const addDisp = latestInPlaceAdditionDisplay(o);
   const sonEk =
     ch === 'IN_PLACE' && addDisp.text
@@ -892,6 +915,7 @@ function liveOrderCardHtml(o) {
       <span><small>Kanal</small><strong>${chLabel}</strong></span>
       <span><small>${ch === 'IN_PLACE' ? 'Masa' : 'Saat'}</small><strong>${ch === 'IN_PLACE' ? masa : createdAt}</strong></span>
       <span><small>Toplam</small><strong>${total}</strong></span>
+      ${collectionMethod}
     </div>
     <p class="a-order-card__items"><strong>${itemsSummary}</strong></p>
     ${itemsHtml}
@@ -1381,8 +1405,10 @@ async function renderOrders(container) {
   } catch {
     couriers = [];
   }
+  const uniqueCouriers = uniqueCouriersById(couriers);
   container.querySelectorAll('.a-courier-sel').forEach((sel) => {
-    couriers.forEach((c) => {
+    [...sel.querySelectorAll('option:not([value=""])')].forEach((o) => o.remove());
+    uniqueCouriers.forEach((c) => {
       const o = document.createElement('option');
       o.value = c._id;
       o.textContent = courierSelectDisplayText(c);
@@ -1396,6 +1422,7 @@ async function renderOrders(container) {
       const id = btn.dataset.id;
       const ch = btn.dataset.ch;
       const act = btn.dataset.act;
+      const collectionMethod = btn.dataset.collectionMethod;
       if (act === 'CANCEL') {
         const ok = await showConfirmDialog({
           title: 'Sipariş iptal edilsin mi?',
@@ -1406,10 +1433,13 @@ async function renderOrders(container) {
         if (!ok) return;
       }
       if (act === 'COMPLETE') {
+        const isPosPayment = collectionMethod === 'POS';
         const ok = await showConfirmDialog({
-          title: 'Sipariş tamamlansın mı?',
-          message: 'Bu sipariş ödendi/tamamlandı durumuna alınacak ve geçmişte görünecek.',
-          confirmLabel: 'Tamamla',
+          title: isPosPayment ? 'Fiş alındı mı?' : 'Sipariş tamamlansın mı?',
+          message: isPosPayment
+            ? 'Bu POS tahsilatı onaylanacak ve sipariş geçmişte görünecek.'
+            : 'Bu sipariş ödendi/tamamlandı durumuna alınacak ve geçmişte görünecek.',
+          confirmLabel: isPosPayment ? 'Fiş aldım' : 'Tamamla',
         });
         if (!ok) return;
       }
