@@ -54,11 +54,21 @@ let courierHistoryUi = {
 };
 
 let staffUi = {
+  /** @type {'list' | 'new'} */
+  sub: 'list',
   page: 0,
   pageSize: 20,
 };
 
+let customerUi = {
+  page: 0,
+  pageSize: 20,
+  q: '',
+};
+
 let tablesUi = {
+  /** @type {'list' | 'new'} */
+  sub: 'list',
   page: 0,
   pageSize: 20,
 };
@@ -97,6 +107,7 @@ function roleLabelTr(r) {
     COURIER: 'Kurye',
     ADMIN: 'Yönetici',
     ADMIN_OWNER: 'Sahip',
+    CUSTOMER: 'Müşteri',
   };
   return m[r] ?? String(r ?? '');
 }
@@ -1344,6 +1355,7 @@ function navButton(label, key) {
     history: 'clock-counter-clockwise',
     shop: 'storefront',
     staff: 'users-three',
+    customers: 'user-list',
     tables: 'qr-code',
     menu: 'fork-knife',
     courier: 'scooter',
@@ -2136,7 +2148,81 @@ async function renderShop(container) {
   };
 }
 
+async function renderStaffNewPage(container) {
+  const onBack = () => {
+    staffUi = { ...staffUi, sub: 'list' };
+    renderMain().catch(console.error);
+  };
+
+  container.innerHTML = `
+    <div class="a-page-head">
+      <div>
+        <p class="a-muted">${buttonHtml({ label: 'Personel listesi', variant: 'secondary', size: 'compact', icon: 'arrow-left', classes: 'a-staff-back' })}</p>
+        <h1 class="a-h1 a-h1--flush">Yeni personel</h1>
+        <p class="a-muted">Panel erişimi için personel bilgilerini ve rolünü tanımlayın.</p>
+      </div>
+    </div>
+
+    <section class="a-card a-form-section">
+      <h2 class="a-h2 a-h2--flush">Personel bilgileri</h2>
+      <label class="a-field-label">İsim</label>
+      <input class="a-input" id="st-fn" placeholder="Ad" />
+      <label class="a-field-label">Soyisim</label>
+      <input class="a-input" id="st-ln" placeholder="Soyad" />
+      <label class="a-field-label">Telefon</label>
+      <input class="a-input" id="st-phone" placeholder="+905…" />
+      <label class="a-field-label">Rol</label>
+      <select class="a-select" id="st-role">
+        <option value="CASHIER">${roleLabelTr('CASHIER')}</option>
+        <option value="COURIER">${roleLabelTr('COURIER')}</option>
+        <option value="ADMIN">${roleLabelTr('ADMIN')}</option>
+      </select>
+    </section>
+
+    <div class="a-form-actions">
+      ${buttonHtml({ label: 'Vazgeç', variant: 'secondary', classes: 'a-staff-back', icon: 'x' })}
+      ${buttonHtml({ label: 'Personeli ekle', id: 'st-add', icon: 'user-plus' })}
+    </div>`;
+
+  container.querySelectorAll('.a-staff-back').forEach((b) => {
+    b.addEventListener('click', onBack);
+  });
+
+  container.querySelector('#st-add')?.addEventListener('click', async () => {
+    const firstName = /** @type {HTMLInputElement} */ (container.querySelector('#st-fn')).value.trim();
+    const lastName = /** @type {HTMLInputElement} */ (container.querySelector('#st-ln')).value.trim();
+    if (firstName.length < 2 || lastName.length < 2) {
+      showToast('İsim ve soyisim en az 2 karakter olmalı.', 'error');
+      /** @type {HTMLElement | null} */ (container.querySelector(firstName.length < 2 ? '#st-fn' : '#st-ln'))?.focus();
+      return;
+    }
+    await withButtonBusy(container.querySelector('#st-add'), 'Ekleniyor…', async () => {
+      try {
+        await api('/admin/staff', {
+          method: 'POST',
+          body: JSON.stringify({
+            phone: /** @type {HTMLInputElement} */ (container.querySelector('#st-phone')).value.trim(),
+            role: /** @type {HTMLSelectElement} */ (container.querySelector('#st-role')).value,
+            firstName,
+            lastName,
+          }),
+        });
+        showToast('Personel eklendi.', 'success');
+        staffUi = { ...staffUi, sub: 'list', page: 0 };
+        renderMain().catch(console.error);
+      } catch (e) {
+        showToast(errorMessage(e), 'error');
+      }
+    });
+  });
+}
+
 async function renderStaff(container) {
+  if (staffUi.sub === 'new') {
+    await renderStaffNewPage(container);
+    return;
+  }
+
   const params = new URLSearchParams({
     page: String(staffUi.page),
     pageSize: String(staffUi.pageSize),
@@ -2162,21 +2248,14 @@ async function renderStaff(container) {
   const staffHasPrev = staffUi.page > 0;
   const staffHasNext = staffUi.page * staffUi.pageSize + list.length < paged.total;
   container.innerHTML = `
-    <h1 class="a-h1">Personel</h1>
-    <div class="a-card a-staff-form">
-      <label class="a-field-label">İsim</label>
-      <input class="a-input" id="st-fn" placeholder="Ad" />
-      <label class="a-field-label">Soyisim</label>
-      <input class="a-input" id="st-ln" placeholder="Soyad" />
-      <label class="a-field-label">Telefon</label>
-      <input class="a-input" id="st-phone" placeholder="+905…" />
-      <label class="a-field-label">Rol</label>
-      <select class="a-select" id="st-role">
-        <option value="CASHIER">${roleLabelTr('CASHIER')}</option>
-        <option value="COURIER">${roleLabelTr('COURIER')}</option>
-        <option value="ADMIN">${roleLabelTr('ADMIN')}</option>
-      </select>
-      ${buttonHtml({ label: 'Ekle', id: 'st-add', icon: 'user-plus', classes: 'a-staff-add' })}
+    <div class="a-page-head">
+      <div>
+        <h1 class="a-h1 a-h1--flush">Personel</h1>
+        <p class="a-muted">Panel kullanıcılarını ve rollerini yönetin. Yeni kayıt ayrı sayfada açılır.</p>
+      </div>
+      <div class="a-page-head__actions">
+        ${buttonHtml({ label: 'Yeni personel', id: 'st-goto-new', icon: 'user-plus' })}
+      </div>
     </div>
     <p class="a-muted">${esc(`${staffFrom}–${staffTo} / ${paged.total} kayıt`)}</p>
     <div class="a-table-wrap a-staff-table"><table class="a-table">
@@ -2219,6 +2298,10 @@ async function renderStaff(container) {
     </div>`;
 
   const tbody = container.querySelector('#st-tbody');
+  container.querySelector('#st-goto-new')?.addEventListener('click', () => {
+    staffUi = { ...staffUi, sub: 'new' };
+    renderMain().catch(console.error);
+  });
   tbody.addEventListener('click', async (e) => {
     const t = e.target;
     if (!(t instanceof HTMLElement)) return;
@@ -2258,32 +2341,6 @@ async function renderStaff(container) {
     }
   });
 
-  container.querySelector('#st-add').onclick = async () => {
-    const firstName = container.querySelector('#st-fn').value.trim();
-    const lastName = container.querySelector('#st-ln').value.trim();
-    if (firstName.length < 2 || lastName.length < 2) {
-      showToast('İsim ve soyisim en az 2 karakter olmalı.', 'error');
-      /** @type {HTMLElement | null} */ (container.querySelector(firstName.length < 2 ? '#st-fn' : '#st-ln'))?.focus();
-      return;
-    }
-    await withButtonBusy(container.querySelector('#st-add'), 'Ekleniyor…', async () => {
-      try {
-        await api('/admin/staff', {
-          method: 'POST',
-          body: JSON.stringify({
-            phone: container.querySelector('#st-phone').value.trim(),
-            role: container.querySelector('#st-role').value,
-            firstName,
-            lastName,
-          }),
-        });
-        showToast('Personel eklendi.', 'success');
-        await renderStaff(container);
-      } catch (e) {
-        showToast(errorMessage(e), 'error');
-      }
-    });
-  };
   container.querySelector('#st-prev')?.addEventListener('click', () => {
     if (staffUi.page <= 0) return;
     staffUi.page -= 1;
@@ -2316,7 +2373,198 @@ async function renderStaff(container) {
   });
 }
 
+async function renderCustomers(container) {
+  const params = new URLSearchParams({
+    page: String(customerUi.page),
+    pageSize: String(customerUi.pageSize),
+  });
+  const qTrim = customerUi.q.trim();
+  if (qTrim) params.set('q', qTrim);
+  let paged;
+  try {
+    paged = parsePaged(await api(`/admin/customers?${params.toString()}`), customerUi.pageSize);
+  } catch (e) {
+    container.innerHTML = `<p class="a-error">${esc(e.message)}</p>`;
+    return;
+  }
+  customerUi.page = paged.page;
+  customerUi.pageSize = paged.pageSize;
+  const maxPage =
+    paged.total === 0 ? 0 : Math.max(0, Math.ceil(paged.total / customerUi.pageSize) - 1);
+  if (customerUi.page > maxPage && maxPage >= 0) {
+    customerUi.page = maxPage;
+    return renderCustomers(container);
+  }
+  const list = paged.items;
+  const customerFrom = paged.total === 0 ? 0 : customerUi.page * customerUi.pageSize + 1;
+  const customerTo = Math.min(paged.total, customerUi.page * customerUi.pageSize + list.length);
+  const customerHasPrev = customerUi.page > 0;
+  const customerHasNext = customerUi.page * customerUi.pageSize + list.length < paged.total;
+  const rows = list
+    .map((u) => {
+      const id = String(u._id ?? u.id ?? '');
+      const fn = u.firstName ?? '';
+      const ln = u.lastName ?? '';
+      const display = [fn, ln].filter(Boolean).join(' ') || '—';
+      const active = u.isActive !== false;
+      const addressCount = Array.isArray(u.addresses) ? u.addresses.length : 0;
+      const created = u.createdAt ? formatDateTimeTr(u.createdAt) : '—';
+      const action = active
+        ? buttonHtml({
+            label: 'Engelle',
+            variant: 'danger',
+            size: 'compact',
+            icon: 'prohibit',
+            classes: 'a-customer-status',
+            attrs: { 'data-id': id, 'data-active': 'false' },
+          })
+        : buttonHtml({
+            label: 'Aktif et',
+            variant: 'secondary',
+            size: 'compact',
+            icon: 'check-circle',
+            classes: 'a-customer-status',
+            attrs: { 'data-id': id, 'data-active': 'true' },
+          });
+      return `<tr>
+        <td>${esc(display)}</td>
+        <td>${esc(formatPhoneTrDisplay(u.phoneE164))}</td>
+        <td>${esc(String(addressCount))}</td>
+        <td class="a-muted">${esc(created)}</td>
+        <td><span class="a-badge">${active ? 'Aktif' : 'Engelli'}</span></td>
+        <td><div class="a-table-actions">${action}</div></td>
+      </tr>`;
+    })
+    .join('');
+
+  container.innerHTML = `
+    <div class="a-list-page">
+      <h1 class="a-h1">Müşteriler</h1>
+      <form class="a-history-toolbar" id="cust-search-form" role="search">
+        <input class="a-input a-history-q" type="search" id="cust-q" name="q" placeholder="Ad, soyad veya telefon ara…" value="${esc(customerUi.q)}" autocomplete="off" />
+        ${buttonHtml({ label: 'Ara', id: 'cust-submit', type: 'submit', icon: 'magnifying-glass' })}
+      </form>
+      <p class="a-muted">${esc(`${customerFrom}–${customerTo} / ${paged.total} kayıt`)}</p>
+      <div class="a-table-wrap"><table class="a-table">
+        <thead><tr><th>Ad Soyad</th><th>Telefon</th><th>Adres</th><th>Kayıt</th><th>Durum</th><th></th></tr></thead>
+        <tbody>${rows || emptyRowHtml('Müşteri kaydı yok', 6)}</tbody>
+      </table></div>
+      <div class="a-history-pager">
+        ${buttonHtml({ label: 'Önceki', id: 'cust-prev', variant: 'secondary', icon: 'caret-left', disabled: !customerHasPrev })}
+        <span class="a-muted">Sayfa ${esc(String(customerUi.page + 1))}</span>
+        ${buttonHtml({ label: 'Sonraki', id: 'cust-next', variant: 'secondary', icon: 'caret-right', disabled: !customerHasNext })}
+      </div>
+    </div>`;
+
+  container.querySelector('#cust-search-form')?.addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const input = /** @type {HTMLInputElement | null} */ (
+      container.querySelector('#cust-q')
+    );
+    customerUi.q = input?.value?.trim() ?? '';
+    customerUi.page = 0;
+    renderCustomers(container).catch(console.error);
+  });
+  container.querySelector('#cust-prev')?.addEventListener('click', () => {
+    if (customerUi.page <= 0) return;
+    customerUi.page -= 1;
+    renderCustomers(container).catch(console.error);
+  });
+  container.querySelector('#cust-next')?.addEventListener('click', () => {
+    if (!customerHasNext) return;
+    customerUi.page += 1;
+    renderCustomers(container).catch(console.error);
+  });
+  container.querySelectorAll('.a-customer-status').forEach((b) => {
+    b.addEventListener('click', async () => {
+      const nextActive = b.dataset.active === 'true';
+      const ok = await showConfirmDialog({
+        title: nextActive ? 'Müşteri aktif edilsin mi?' : 'Müşteri engellensin mi?',
+        message: nextActive
+          ? 'Bu müşteri tekrar giriş yapıp sipariş verebilecek.'
+          : 'Bu müşteri giriş yapamayacak ve sipariş veremeyecek.',
+        confirmLabel: nextActive ? 'Aktif et' : 'Engelle',
+        variant: nextActive ? 'primary' : 'danger',
+      });
+      if (!ok) return;
+      await withButtonBusy(/** @type {HTMLElement} */ (b), 'Güncelleniyor…', async () => {
+        try {
+          await api(`/admin/customers/${b.dataset.id}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ isActive: nextActive }),
+          });
+          showToast(nextActive ? 'Müşteri aktif edildi.' : 'Müşteri engellendi.', 'success');
+          await renderCustomers(container);
+        } catch (e) {
+          showToast(errorMessage(e), 'error');
+        }
+      });
+    });
+  });
+}
+
+async function renderTableNewPage(container) {
+  const onBack = () => {
+    tablesUi = { ...tablesUi, sub: 'list' };
+    renderMain().catch(console.error);
+  };
+
+  container.innerHTML = `
+    <div class="a-page-head">
+      <div>
+        <p class="a-muted">${buttonHtml({ label: 'Masa listesi', variant: 'secondary', size: 'compact', icon: 'arrow-left', classes: 'a-table-back' })}</p>
+        <h1 class="a-h1 a-h1--flush">Yeni masa</h1>
+        <p class="a-muted">Masa numarası ve isteğe bağlı etiket tanımlayın; QR bağlantısı otomatik oluşturulur.</p>
+      </div>
+    </div>
+
+    <section class="a-card a-form-section">
+      <h2 class="a-h2 a-h2--flush">Masa bilgileri</h2>
+      <label class="a-field-label">Masa numarası (0 değil)</label>
+      <input class="a-input a-field-narrow" type="number" id="tb-num" min="1" placeholder="No" />
+      <label class="a-field-label">Etiket <span class="a-muted">(opsiyonel)</span></label>
+      <input class="a-input" id="tb-label" placeholder="Örn. Bahçe" />
+    </section>
+
+    <div class="a-form-actions">
+      ${buttonHtml({ label: 'Vazgeç', variant: 'secondary', classes: 'a-table-back', icon: 'x' })}
+      ${buttonHtml({ label: 'Masayı oluştur', id: 'tb-add', icon: 'plus-circle' })}
+    </div>`;
+
+  container.querySelectorAll('.a-table-back').forEach((b) => {
+    b.addEventListener('click', onBack);
+  });
+
+  container.querySelector('#tb-add')?.addEventListener('click', async () => {
+    const number = Number(/** @type {HTMLInputElement} */ (container.querySelector('#tb-num')).value);
+    const label = /** @type {HTMLInputElement} */ (container.querySelector('#tb-label')).value.trim();
+    if (!Number.isFinite(number) || number <= 0) {
+      showToast('Geçerli bir masa numarası girin.', 'error');
+      /** @type {HTMLElement | null} */ (container.querySelector('#tb-num'))?.focus();
+      return;
+    }
+    await withButtonBusy(container.querySelector('#tb-add'), 'Oluşturuluyor…', async () => {
+      try {
+        await api('/admin/tables', {
+          method: 'POST',
+          body: JSON.stringify({ number, label: label || undefined }),
+        });
+        showToast('Masa oluşturuldu.', 'success');
+        tablesUi = { ...tablesUi, sub: 'list', page: 0 };
+        renderMain().catch(console.error);
+      } catch (e) {
+        showToast(errorMessage(e), 'error');
+      }
+    });
+  });
+}
+
 async function renderTables(container) {
+  if (tablesUi.sub === 'new') {
+    await renderTableNewPage(container);
+    return;
+  }
+
   const params = new URLSearchParams({
     page: String(tablesUi.page),
     pageSize: String(tablesUi.pageSize),
@@ -2342,13 +2590,13 @@ async function renderTables(container) {
   const tablesHasPrev = tablesUi.page > 0;
   const tablesHasNext = tablesUi.page * tablesUi.pageSize + list.length < paged.total;
   container.innerHTML = `
-    <h1 class="a-h1">Masalar</h1>
-    <div class="a-card a-form-stack">
-      <label class="a-field-label">Yeni masa numarası (0 değil)</label>
-      <div class="a-action-row">
-        <input class="a-input a-field-narrow" type="number" id="tb-num" min="1" placeholder="No" />
-        <input class="a-input" id="tb-label" placeholder="Etiket (opsiyonel)" />
-        ${buttonHtml({ label: 'Oluştur', id: 'tb-add', icon: 'plus-circle' })}
+    <div class="a-page-head">
+      <div>
+        <h1 class="a-h1 a-h1--flush">Masalar</h1>
+        <p class="a-muted">Masa QR bağlantılarını yönetin. Yeni masa ayrı sayfada açılır.</p>
+      </div>
+      <div class="a-page-head__actions">
+        ${buttonHtml({ label: 'Yeni masa', id: 'tb-goto-new', icon: 'plus-circle' })}
       </div>
     </div>
     <p class="a-muted">${esc(`${tablesFrom}–${tablesTo} / ${paged.total} kayıt`)}</p>
@@ -2379,27 +2627,10 @@ async function renderTables(container) {
       ${buttonHtml({ label: 'Sonraki', id: 'tb-next', variant: 'secondary', icon: 'caret-right', disabled: !tablesHasNext })}
     </div>`;
 
-  container.querySelector('#tb-add').onclick = async () => {
-    const number = Number(container.querySelector('#tb-num').value);
-    const label = container.querySelector('#tb-label').value.trim();
-    if (!Number.isFinite(number) || number <= 0) {
-      showToast('Geçerli bir masa numarası girin.', 'error');
-      /** @type {HTMLElement | null} */ (container.querySelector('#tb-num'))?.focus();
-      return;
-    }
-    await withButtonBusy(container.querySelector('#tb-add'), 'Oluşturuluyor…', async () => {
-      try {
-        await api('/admin/tables', {
-          method: 'POST',
-          body: JSON.stringify({ number, label: label || undefined }),
-        });
-        showToast('Masa oluşturuldu.', 'success');
-        await renderTables(container);
-      } catch (e) {
-        showToast(errorMessage(e), 'error');
-      }
-    });
-  };
+  container.querySelector('#tb-goto-new')?.addEventListener('click', () => {
+    tablesUi = { ...tablesUi, sub: 'new' };
+    renderMain().catch(console.error);
+  });
   container.querySelectorAll('.a-dlqr').forEach((b) => {
     b.onclick = () => {
       const menuUrl = b.dataset.menuUrl;
@@ -2574,6 +2805,7 @@ async function renderMain() {
     await renderMain();
   } else if (view === 'shop' && isCashierPlus()) await renderShop(main);
   else if (view === 'staff' && isAdmin()) await renderStaff(main);
+  else if (view === 'customers' && isAdmin()) await renderCustomers(main);
   else if (view === 'tables' && isAdmin()) await renderTables(main);
   else if (view === 'menu' && isAdmin()) await renderMenuAdmin(main);
   else {
@@ -2597,7 +2829,7 @@ function renderApp(root) {
     : `${navButton('Siparişler', 'orders')}
        ${navButton('Geçmiş', 'history')}
        ${isCashierPlus() ? navButton('Mağaza', 'shop') : ''}
-       ${isAdmin() ? navButton('Personel', 'staff') + navButton('Masalar', 'tables') + navButton('Menü', 'menu') : ''}`;
+       ${isAdmin() ? navButton('Personel', 'staff') + navButton('Müşteriler', 'customers') + navButton('Masalar', 'tables') + navButton('Menü', 'menu') : ''}`;
 
   root.innerHTML = `
     <div class="a-layout">
