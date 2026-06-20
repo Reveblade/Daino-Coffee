@@ -479,12 +479,60 @@ document.querySelectorAll('[data-customer-auth-cta]').forEach((button) => {
 
 const list = document.getElementById('roastList');
 if (list) {
+  let roastMeasureFrame;
+
+  const syncRoastListState = () => {
+    list.classList.toggle('has-active', Boolean(list.querySelector('.roast-item.active')));
+  };
+
+  const measureRoastListHeight = () => {
+    window.cancelAnimationFrame(roastMeasureFrame);
+    roastMeasureFrame = window.requestAnimationFrame(() => {
+      const parent = list.parentElement;
+      if (!parent || !list.offsetWidth) return;
+
+      const clone = list.cloneNode(true);
+      clone.id = '';
+      clone.setAttribute('aria-hidden', 'true');
+      clone.classList.add('has-active');
+      clone.style.cssText = [
+        'position:absolute',
+        'visibility:hidden',
+        'pointer-events:none',
+        'left:0',
+        'top:0',
+        `width:${list.offsetWidth}px`,
+        'min-height:0',
+        'height:auto',
+        'z-index:-1',
+      ].join(';');
+
+      const cloneItems = Array.from(clone.querySelectorAll('.roast-item'));
+      const maxHeight = cloneItems.reduce((height, item) => {
+        cloneItems.forEach((cloneItem) => cloneItem.classList.remove('active'));
+        item.classList.add('active');
+        parent.append(clone);
+        const nextHeight = Math.max(height, clone.offsetHeight);
+        clone.remove();
+        return nextHeight;
+      }, 0);
+
+      list.style.setProperty('--roast-list-min-height', `${Math.ceil(maxHeight)}px`);
+    });
+  };
+
   list.querySelectorAll('.roast-item').forEach((item) => {
     item.addEventListener('click', () => {
+      const shouldOpen = !item.classList.contains('active');
       list.querySelectorAll('.roast-item').forEach((i) => i.classList.remove('active'));
-      item.classList.add('active');
+      if (shouldOpen) item.classList.add('active');
+      syncRoastListState();
     });
   });
+  syncRoastListState();
+  measureRoastListHeight();
+  window.addEventListener('resize', measureRoastListHeight);
+  document.fonts?.ready?.then(measureRoastListHeight);
 }
 
 function whenWindowLoad() {

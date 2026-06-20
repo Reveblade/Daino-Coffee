@@ -2200,7 +2200,16 @@
       margin: 0 auto;
       padding: 0 clamp(0px, 2vw, 24px);
     }
-    .roast-list { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 8px; position: relative; z-index: 1; }
+    .roast-list {
+      max-width: 1080px;
+      min-height: var(--roast-list-min-height, 0);
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+      z-index: 1;
+    }
     .roast-item {
       border-radius: 8px;
       border: 1px solid rgba(var(--off-white-rgb), 0.12);
@@ -2262,6 +2271,7 @@
     .roast-expand {
       grid-column: 1 / -1;
       display: none;
+      box-sizing: border-box;
       padding: 0 0 8px 0;
       font-size: 0.85rem;
       color: rgba(var(--navy-rgb), 0.75);
@@ -2441,9 +2451,9 @@
       /* Same pill proportions as desktop; fixed for thumb reach */
       .nav-actions .nav-cta {
         position: fixed;
-        inset: auto calc(22px + env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) auto;
+        inset: auto calc(22px + env(safe-area-inset-right, 0px)) calc(52px + env(safe-area-inset-bottom, 0px)) auto;
         right: calc(22px + env(safe-area-inset-right, 0px));
-        bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+        bottom: calc(52px + env(safe-area-inset-bottom, 0px));
         left: auto;
         top: auto;
         z-index: 1998;
@@ -2517,6 +2527,9 @@
       }
       .drink-carousel-controls {
         flex-wrap: wrap;
+      }
+      .order-title {
+        font-size: clamp(4.2rem, 19vw, 6.8rem);
       }
       .contact-grid { grid-template-columns: 1fr; }
       .contact-map-heading-row {
