@@ -243,7 +243,6 @@ export async function renderMenuList(container, ctx) {
       <div class="a-page-head">
         <div>
           <h1 class="a-h1 a-h1--flush">Menü</h1>
-          <p class="a-muted">Kategorileri ve ürünleri yönetin. Düzenlemeler ayrı sayfalarda açılır.</p>
         </div>
         <div class="a-page-head__actions">
           ${buttonHtml({ label: 'Yeni kategori', id: 'menu-goto-cat-new', variant: 'secondary', icon: 'folder-plus', classes: 'a-menu-head-btn' })}

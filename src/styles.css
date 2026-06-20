@@ -604,6 +604,68 @@ body {
   box-shadow: 0 14px 32px rgba(0, 0, 0, 0.1);
 }
 
+.a-shop-service-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+}
+
+.a-shop-service-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.a-shop-service-copy .a-muted {
+  margin: 0;
+}
+
+.a-shop-service-title {
+  font-weight: 700;
+}
+
+.a-shop-service-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.a-service-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 19px;
+  height: 19px;
+}
+
+.a-service-status__light {
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: rgba(246, 241, 232, 0.35);
+  box-shadow: 0 0 0 4px rgba(246, 241, 232, 0.06);
+}
+
+.a-service-status--on .a-service-status__light {
+  background: #3ee483;
+  box-shadow:
+    0 0 0 4px rgba(62, 228, 131, 0.12),
+    0 0 18px rgba(62, 228, 131, 0.58);
+}
+
+.a-service-status--off .a-service-status__light {
+  background: #ff6b57;
+  box-shadow:
+    0 0 0 4px rgba(255, 107, 87, 0.12),
+    0 0 18px rgba(255, 107, 87, 0.36);
+}
+
+.a-shop-service-toggle {
+  width: 138px;
+  flex: 0 0 138px;
+}
+
 .a-courier-mission {
   display: grid;
   gap: 14px;
@@ -1808,6 +1870,14 @@ body {
   .a-form-actions .a-btn,
   .a-dialog-actions .a-btn {
     flex: 1 1 100%;
+  }
+
+  .a-shop-service-card {
+    grid-template-columns: 1fr;
+  }
+
+  .a-shop-service-control {
+    justify-content: space-between;
   }
 
   .a-toast-host {

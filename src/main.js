@@ -2123,21 +2123,33 @@ async function renderShop(container) {
     container.innerHTML = `<p class="a-error">${esc(e.message)}</p>`;
     return;
   }
+  const serviceEnabled = Boolean(s.serviceEnabled);
   container.innerHTML = `
     <h1 class="a-h1">Mağaza</h1>
-    <div class="a-card">
-      <div class="a-row">
-        <span>Masadan sipariş (servis)</span>
-        ${buttonHtml({ label: s.serviceEnabled ? 'Açık, kapat' : 'Kapalı, aç', id: 'svc-toggle', icon: s.serviceEnabled ? 'toggle-right' : 'toggle-left' })}
+    <div class="a-card a-shop-service-card">
+      <div class="a-shop-service-copy">
+        <span class="a-shop-service-title">Masadan sipariş (servis)</span>
+        <p class="a-muted">Kapalıyken QR menü self-servis mesajı gösterir; masa siparişi API ile engellenir.</p>
       </div>
-      <p class="a-muted">Kapalıyken QR menü self-servis mesajı gösterir; masa siparişi API ile engellenir.</p>
+      <div class="a-shop-service-control">
+        <span class="a-service-status a-service-status--${serviceEnabled ? 'on' : 'off'}" aria-label="Servis ${serviceEnabled ? 'açık' : 'kapalı'}">
+          <span class="a-service-status__light" aria-hidden="true"></span>
+        </span>
+        ${buttonHtml({
+          label: serviceEnabled ? 'Kapat' : 'Aç',
+          id: 'svc-toggle',
+          variant: serviceEnabled ? 'danger' : 'primary',
+          classes: 'a-shop-service-toggle',
+          attrs: { 'aria-label': `Servisi ${serviceEnabled ? 'kapat' : 'aç'}` },
+        })}
+      </div>
     </div>`;
   container.querySelector('#svc-toggle').onclick = async () => {
     await withButtonBusy(container.querySelector('#svc-toggle'), 'Güncelleniyor…', async () => {
       try {
         await api('/shop/settings', {
           method: 'PATCH',
-          body: JSON.stringify({ serviceEnabled: !s.serviceEnabled }),
+          body: JSON.stringify({ serviceEnabled: !serviceEnabled }),
         });
         showToast('Mağaza ayarı güncellendi.', 'success');
         await renderShop(container);
@@ -2251,7 +2263,6 @@ async function renderStaff(container) {
     <div class="a-page-head">
       <div>
         <h1 class="a-h1 a-h1--flush">Personel</h1>
-        <p class="a-muted">Panel kullanıcılarını ve rollerini yönetin. Yeni kayıt ayrı sayfada açılır.</p>
       </div>
       <div class="a-page-head__actions">
         ${buttonHtml({ label: 'Yeni personel', id: 'st-goto-new', icon: 'user-plus' })}
@@ -2593,7 +2604,6 @@ async function renderTables(container) {
     <div class="a-page-head">
       <div>
         <h1 class="a-h1 a-h1--flush">Masalar</h1>
-        <p class="a-muted">Masa QR bağlantılarını yönetin. Yeni masa ayrı sayfada açılır.</p>
       </div>
       <div class="a-page-head__actions">
         ${buttonHtml({ label: 'Yeni masa', id: 'tb-goto-new', icon: 'plus-circle' })}
