@@ -1002,6 +1002,13 @@ export class OrdersService {
     if (order.status !== ONLINE.READY_FOR_HANDOFF) {
       throw new BadRequestException('Order not ready for handoff')
     }
+    const activeCourierOrder = await this.orderModel.exists({
+      assignedCourierId: courier._id,
+      status: { $in: [ONLINE.ASSIGNED, ONLINE.OUT_FOR_DELIVERY] },
+    })
+    if (activeCourierOrder) {
+      throw new BadRequestException('Courier is busy')
+    }
     const prev = order.status
     order.status = ONLINE.ASSIGNED
     order.assignedCourierId = courier._id
@@ -1069,23 +1076,16 @@ export class OrdersService {
       to: ONLINE.DELIVERED,
       metadata: { collectionMethod: method },
     })
-    if (method === CollectionMethod.POS) {
-      order.status = ONLINE.PAID
-      this.pushHistory(order, {
-        ...this.actorRef(actor),
-        from: ONLINE.DELIVERED,
-        to: ONLINE.PAID,
-        note: 'POS payment',
-      })
-    } else {
-      order.status = ONLINE.AWAITING_CASHIER_PAYMENT
-      this.pushHistory(order, {
-        ...this.actorRef(actor),
-        from: ONLINE.DELIVERED,
-        to: ONLINE.AWAITING_CASHIER_PAYMENT,
-        note: 'Cash collected by courier; awaiting cashier confirmation',
-      })
-    }
+    order.status = ONLINE.AWAITING_CASHIER_PAYMENT
+    this.pushHistory(order, {
+      ...this.actorRef(actor),
+      from: ONLINE.DELIVERED,
+      to: ONLINE.AWAITING_CASHIER_PAYMENT,
+      note:
+        method === CollectionMethod.POS
+          ? 'POS payment; awaiting receipt confirmation'
+          : 'Cash collected by courier; awaiting cashier confirmation',
+    })
     await order.save()
     this.ordersStaffRealtime.notifyOrdersChanged()
     return order

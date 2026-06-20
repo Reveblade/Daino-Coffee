@@ -8,6 +8,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
+import { Order, OrderDocument } from '../orders/schemas/order.schema';
 import { User, UserAddress, UserDocument, UserRole } from './schemas/user.schema';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 
@@ -21,6 +22,7 @@ export interface StaffAdminPage<T> {
 const DELIVERY_DISTRICT = 'akhisar';
 const DELIVERY_AREA_MESSAGE =
   'Web siparişi için teslimat adresi Akhisar içinde olmalıdır.';
+const BUSY_COURIER_STATUSES = ['ASSIGNED', 'OUT_FOR_DELIVERY'] as const;
 
 function normalizeDeliveryText(value?: string): string {
   return (value ?? '')
@@ -32,7 +34,10 @@ function normalizeDeliveryText(value?: string): string {
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(Order.name) private orderModel: Model<OrderDocument>,
+  ) {}
 
   findById(id: string): Promise<UserDocument | null> {
     return this.userModel.findById(id).exec();
@@ -279,8 +284,17 @@ export class UsersService {
   }
 
   async listActiveCouriers(): Promise<UserDocument[]> {
+    const busyCourierIds = await this.orderModel.distinct('assignedCourierId', {
+      assignedCourierId: { $ne: null },
+      status: { $in: BUSY_COURIER_STATUSES },
+    });
+
     return this.userModel
-      .find({ role: UserRole.COURIER, isActive: true })
+      .find({
+        role: UserRole.COURIER,
+        isActive: true,
+        _id: { $nin: busyCourierIds },
+      })
       .sort({ phoneE164: 1 })
       .exec();
   }

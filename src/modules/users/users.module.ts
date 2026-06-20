@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { Order, OrderSchema } from '../orders/schemas/order.schema';
 import { User, UserSchema } from './schemas/user.schema';
 import {
   OtpChallenge,
@@ -12,6 +13,7 @@ import { AdminController, UsersController } from './users.controller';
   imports: [
     MongooseModule.forFeature([
       { name: User.name, schema: UserSchema },
+      { name: Order.name, schema: OrderSchema },
       { name: OtpChallenge.name, schema: OtpChallengeSchema },
     ]),
   ],

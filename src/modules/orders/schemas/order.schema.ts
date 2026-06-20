@@ -187,3 +187,4 @@ export class Order {
 export const OrderSchema = SchemaFactory.createForClass(Order);
 
 OrderSchema.index({ channel: 1, status: 1, createdAt: -1 });
+OrderSchema.index({ assignedCourierId: 1, status: 1, updatedAt: -1 });
