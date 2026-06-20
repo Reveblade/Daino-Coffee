@@ -14,7 +14,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../users/schemas/user.schema';
 
-const MAX_BYTES = 3 * 1024 * 1024;
+const MAX_BYTES = 12 * 1024 * 1024;
 
 @Controller('admin/uploads')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -36,8 +36,10 @@ export class UploadsController {
     if (!file.mimetype.startsWith('image/')) {
       throw new BadRequestException('image only');
     }
-    const b64 = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
-    const res = await this.uploads.uploadDataUri(b64);
+    const res = await this.uploads.uploadOptimizedImage(
+      file.buffer,
+      file.originalname ?? 'image',
+    );
     if (!res) {
       throw new BadRequestException('Cloudinary not configured');
     }

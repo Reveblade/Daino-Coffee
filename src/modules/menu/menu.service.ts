@@ -10,12 +10,30 @@ import {
   Product,
   ProductDocument,
   ProductOptionGroup,
+  PRODUCT_DESCRIPTION_MAX_LENGTH,
+  PRODUCT_NAME_MAX_LENGTH,
+  PRODUCT_OPTION_CHOICE_LABEL_MAX_LENGTH,
+  PRODUCT_OPTION_EXTRA_PRICE_MAX_KURUS,
+  PRODUCT_OPTION_GROUP_LABEL_MAX_LENGTH,
+  PRODUCT_PRICE_MAX_KURUS,
 } from './schemas/product.schema';
 import { UploadsService } from '../uploads/uploads.service';
 import { StoreRealtimeGateway } from '../store-realtime/store-realtime.gateway';
 
 function escapeRegex(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function assertMaxLength(value: string, max: number, field: string) {
+  if (value.length > max) {
+    throw new BadRequestException(`${field} en fazla ${max} karakter olabilir`);
+  }
+}
+
+function assertPriceLimit(value: number, max: number, field: string) {
+  if (!Number.isInteger(value) || value < 0 || value > max) {
+    throw new BadRequestException(`${field} geçerli aralıkta değil`);
+  }
 }
 
 export type MenuAdminPage<T> = {
@@ -40,48 +58,73 @@ export class MenuService {
     groups?: ProductOptionGroup[] | null,
   ): ProductOptionGroup[] {
     if (!groups?.length) {
-      return []
+      return [];
     }
-    const gids = new Set<string>()
-    const out: ProductOptionGroup[] = []
+    const gids = new Set<string>();
+    const out: ProductOptionGroup[] = [];
     for (const g of groups) {
-      const gid = String(g?.id ?? '').trim()
-      const glabel = String(g?.label ?? '').trim()
+      const gid = String(g?.id ?? '').trim();
+      const glabel = String(g?.label ?? '').trim();
       if (!gid || !glabel) {
-        throw new BadRequestException('Seçenek grubu id ve başlık zorunludur')
+        throw new BadRequestException('Seçenek grubu id ve başlık zorunludur');
       }
+      assertMaxLength(
+        glabel,
+        PRODUCT_OPTION_GROUP_LABEL_MAX_LENGTH,
+        'Seçenek grubu başlığı',
+      );
       if (gids.has(gid)) {
-        throw new BadRequestException(`Yinelenen seçenek grubu id: ${gid}`)
+        throw new BadRequestException(`Yinelenen seçenek grubu id: ${gid}`);
       }
-      gids.add(gid)
-      const kind = g.kind === 'SELECTABLE' || g.kind === 'SINGLE' ? g.kind : null
+      gids.add(gid);
+      const kind =
+        g.kind === 'SELECTABLE' || g.kind === 'SINGLE' ? g.kind : null;
       if (!kind) {
-        throw new BadRequestException(`Geçersiz seçenek türü: ${String(g?.kind)}`)
+        throw new BadRequestException(
+          `Geçersiz seçenek türü: ${String(g?.kind)}`,
+        );
       }
-      const choicesIn = Array.isArray(g.choices) ? g.choices : []
+      const choicesIn = Array.isArray(g.choices) ? g.choices : [];
       if (!choicesIn.length) {
-        throw new BadRequestException(`"${glabel}" grubunda en az bir seçenek olmalı`)
+        throw new BadRequestException(
+          `"${glabel}" grubunda en az bir seçenek olmalı`,
+        );
       }
-      const cids = new Set<string>()
-      const choices: { id: string; label: string; extraPriceKurus: number }[] = []
+      const cids = new Set<string>();
+      const choices: { id: string; label: string; extraPriceKurus: number }[] =
+        [];
       for (const c of choicesIn) {
-        const cid = String(c?.id ?? '').trim()
-        const clabel = String(c?.label ?? '').trim()
+        const cid = String(c?.id ?? '').trim();
+        const clabel = String(c?.label ?? '').trim();
         if (!cid || !clabel) {
-          throw new BadRequestException('Seçenek id ve etiketi zorunludur')
+          throw new BadRequestException('Seçenek id ve etiketi zorunludur');
         }
+        assertMaxLength(
+          clabel,
+          PRODUCT_OPTION_CHOICE_LABEL_MAX_LENGTH,
+          'Seçenek etiketi',
+        );
         if (cids.has(cid)) {
-          throw new BadRequestException(`Yinelenen seçenek id (${glabel}): ${cid}`)
+          throw new BadRequestException(
+            `Yinelenen seçenek id (${glabel}): ${cid}`,
+          );
         }
-        cids.add(cid)
-        const rawExtra = Number((c as { extraPriceKurus?: unknown })?.extraPriceKurus)
+        cids.add(cid);
+        const rawExtra = Number(
+          (c as { extraPriceKurus?: unknown })?.extraPriceKurus,
+        );
         const extraPriceKurus =
-          Number.isFinite(rawExtra) && rawExtra >= 0 ? Math.round(rawExtra) : 0
-        choices.push({ id: cid, label: clabel, extraPriceKurus })
+          Number.isFinite(rawExtra) && rawExtra >= 0 ? Math.round(rawExtra) : 0;
+        assertPriceLimit(
+          extraPriceKurus,
+          PRODUCT_OPTION_EXTRA_PRICE_MAX_KURUS,
+          'Ek fiyat',
+        );
+        choices.push({ id: cid, label: clabel, extraPriceKurus });
       }
-      out.push({ id: gid, label: glabel, kind, choices })
+      out.push({ id: gid, label: glabel, kind, choices });
     }
-    return out
+    return out;
   }
 
   async publicMenuTree() {
@@ -98,18 +141,19 @@ export class MenuService {
     return { categories, products };
   }
 
-  async listCategoriesAdmin(
-    opts?: { q?: string; page?: number; pageSize?: number },
-  ): Promise<CategoryDocument[] | MenuAdminPage<CategoryDocument>> {
-    const filter =
-      opts?.q?.trim()
-        ? {
-            $or: [
-              { name: new RegExp(escapeRegex(opts.q.trim()), 'i') },
-              { description: new RegExp(escapeRegex(opts.q.trim()), 'i') },
-            ],
-          }
-        : {};
+  async listCategoriesAdmin(opts?: {
+    q?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<CategoryDocument[] | MenuAdminPage<CategoryDocument>> {
+    const filter = opts?.q?.trim()
+      ? {
+          $or: [
+            { name: new RegExp(escapeRegex(opts.q.trim()), 'i') },
+            { description: new RegExp(escapeRegex(opts.q.trim()), 'i') },
+          ],
+        }
+      : {};
     const sort = { sortIndex: 1 as const, name: 1 as const };
     const usePaging =
       opts != null &&
@@ -226,9 +270,11 @@ export class MenuService {
     this.storeRealtime.notifyMenuChanged();
   }
 
-  async listProductsAdmin(
-    opts?: { q?: string; page?: number; pageSize?: number },
-  ): Promise<ProductDocument[] | MenuAdminPage<ProductDocument>> {
+  async listProductsAdmin(opts?: {
+    q?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<ProductDocument[] | MenuAdminPage<ProductDocument>> {
     const filter: Record<string, unknown> = {};
     const q = opts?.q?.trim();
     if (q) {
@@ -275,29 +321,39 @@ export class MenuService {
   }
 
   async createProduct(body: {
-    categoryId: string
-    name: string
-    description?: string
-    priceKurus: number
-    images?: { url: string; publicId?: string }[]
-    sortIndex?: number
-    optionGroups?: ProductOptionGroup[]
+    categoryId: string;
+    name: string;
+    description?: string;
+    priceKurus: number;
+    images?: { url: string; publicId?: string }[];
+    sortIndex?: number;
+    optionGroups?: ProductOptionGroup[];
   }) {
-    const cat = await this.categoryModel.findById(body.categoryId).exec()
+    const cat = await this.categoryModel.findById(body.categoryId).exec();
     if (!cat) {
-      throw new NotFoundException('Category not found')
+      throw new NotFoundException('Category not found');
     }
-    const optionGroups = this.sanitizeOptionGroups(body.optionGroups ?? null)
+    const name = String(body.name ?? '').trim();
+    const description = body.description?.trim() || undefined;
+    if (!name) {
+      throw new BadRequestException('Ürün adı zorunludur');
+    }
+    assertMaxLength(name, PRODUCT_NAME_MAX_LENGTH, 'Ürün adı');
+    if (description) {
+      assertMaxLength(description, PRODUCT_DESCRIPTION_MAX_LENGTH, 'Açıklama');
+    }
+    assertPriceLimit(body.priceKurus, PRODUCT_PRICE_MAX_KURUS, 'Fiyat');
+    const optionGroups = this.sanitizeOptionGroups(body.optionGroups ?? null);
     const created = await this.productModel.create({
       categoryId: cat._id,
-      name: body.name,
-      description: body.description,
+      name,
+      description,
       priceKurus: body.priceKurus,
       images: body.images ?? [],
       sortIndex: body.sortIndex ?? 0,
       isAvailable: true,
       optionGroups,
-    })
+    });
     this.storeRealtime.notifyMenuChanged();
     return created;
   }
@@ -305,14 +361,14 @@ export class MenuService {
   async updateProduct(
     id: string,
     patch: Partial<{
-      name: string
-      description: string
-      priceKurus: number
-      images: { url: string; publicId?: string }[]
-      isAvailable: boolean
-      sortIndex: number
-      categoryId: string
-      optionGroups: ProductOptionGroup[] | null
+      name: string;
+      description: string;
+      priceKurus: number;
+      images: { url: string; publicId?: string }[];
+      isAvailable: boolean;
+      sortIndex: number;
+      categoryId: string;
+      optionGroups: ProductOptionGroup[] | null;
     }>,
   ) {
     const p = await this.productModel.findById(id).exec();
@@ -326,12 +382,30 @@ export class MenuService {
       }
       p.categoryId = cat._id;
     }
-    const rest = { ...patch } as Record<string, unknown>
+    if (patch.name !== undefined) {
+      patch.name = String(patch.name).trim();
+      if (!patch.name) {
+        throw new BadRequestException('Ürün adı zorunludur');
+      }
+      assertMaxLength(patch.name, PRODUCT_NAME_MAX_LENGTH, 'Ürün adı');
+    }
+    if (patch.description !== undefined) {
+      patch.description = patch.description.trim();
+      assertMaxLength(
+        patch.description,
+        PRODUCT_DESCRIPTION_MAX_LENGTH,
+        'Açıklama',
+      );
+    }
+    if (patch.priceKurus !== undefined) {
+      assertPriceLimit(patch.priceKurus, PRODUCT_PRICE_MAX_KURUS, 'Fiyat');
+    }
+    const rest = { ...patch } as Record<string, unknown>;
     if (rest.optionGroups !== undefined) {
       p.optionGroups = this.sanitizeOptionGroups(
         (rest.optionGroups as ProductOptionGroup[] | null) ?? [],
-      )
-      delete rest.optionGroups
+      );
+      delete rest.optionGroups;
     }
     Object.assign(p, rest);
     await p.save();

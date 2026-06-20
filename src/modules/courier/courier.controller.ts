@@ -30,11 +30,17 @@ export class CourierController {
   }
 
   @Get('orders/history')
-  history(@CurrentUser() user: JwtPayload, @Query('limit') limit?: string) {
-    return this.orders.courierHistory(
-      user,
-      limit ? parseInt(limit, 10) : undefined,
-    );
+  history(
+    @CurrentUser() user: JwtPayload,
+    @Query('limit') limit?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.orders.courierHistory(user, {
+      limit: limit ? parseInt(limit, 10) : undefined,
+      page: page ? parseInt(page, 10) : undefined,
+      pageSize: pageSize ? parseInt(pageSize, 10) : undefined,
+    });
   }
 
   @Post('orders/:id/start-delivery')

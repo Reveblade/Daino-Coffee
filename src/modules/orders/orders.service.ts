@@ -1099,17 +1099,42 @@ export class OrdersService {
       .exec()
   }
 
-  async courierHistory(actor: JwtPayload, limit = 50) {
+  async courierHistory(
+    actor: JwtPayload,
+    query: { limit?: number; page?: number; pageSize?: number } = {},
+  ) {
     if (actor.role !== UserRole.COURIER) {
       throw new ForbiddenException()
     }
-    return this.orderModel
-      .find({
-        assignedCourierId: new Types.ObjectId(actor.sub),
-        status: { $in: [ONLINE.PAID, ONLINE.CANCELLED] },
-      })
-      .sort({ updatedAt: -1 })
-      .limit(Math.min(limit, 200))
-      .exec()
+    const pageSize = Math.min(
+      Math.max(query.pageSize ?? query.limit ?? 20, 1),
+      50,
+    )
+    const pageRaw = query.page ?? 0
+    const page = Math.max(
+      0,
+      Math.floor(
+        typeof pageRaw === 'number' ? pageRaw : parseInt(String(pageRaw), 10),
+      ) || 0,
+    )
+    const filter = {
+      assignedCourierId: new Types.ObjectId(actor.sub),
+      status: { $in: [ONLINE.PAID, ONLINE.CANCELLED] },
+    }
+    const [total, rows] = await Promise.all([
+      this.orderModel.countDocuments(filter),
+      this.orderModel
+        .find(filter)
+        .sort({ updatedAt: -1, _id: -1 })
+        .skip(page * pageSize)
+        .limit(pageSize)
+        .exec(),
+    ])
+    return {
+      items: rows,
+      total,
+      page,
+      pageSize,
+    }
   }
 }

@@ -17,14 +17,26 @@ import { UserRole } from '../users/schemas/user.schema';
 import {
   IsArray,
   IsBoolean,
+  IsInt,
+  IsNotEmpty,
   IsIn,
   IsNumber,
   IsOptional,
   IsString,
+  Max,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import {
+  PRODUCT_DESCRIPTION_MAX_LENGTH,
+  PRODUCT_NAME_MAX_LENGTH,
+  PRODUCT_OPTION_CHOICE_LABEL_MAX_LENGTH,
+  PRODUCT_OPTION_EXTRA_PRICE_MAX_KURUS,
+  PRODUCT_OPTION_GROUP_LABEL_MAX_LENGTH,
+  PRODUCT_PRICE_MAX_KURUS,
+} from './schemas/product.schema';
 
 class ImageDto {
   @IsString()
@@ -40,11 +52,14 @@ class ProductOptionChoiceDto {
   id: string;
 
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(PRODUCT_OPTION_CHOICE_LABEL_MAX_LENGTH)
   label: string;
 
   @IsOptional()
-  @IsNumber()
+  @IsInt()
   @Min(0)
+  @Max(PRODUCT_OPTION_EXTRA_PRICE_MAX_KURUS)
   extraPriceKurus?: number;
 }
 
@@ -53,6 +68,8 @@ class ProductOptionGroupDto {
   id: string;
 
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(PRODUCT_OPTION_GROUP_LABEL_MAX_LENGTH)
   label: string;
 
   @IsIn(['SELECTABLE', 'SINGLE'])
@@ -90,14 +107,18 @@ class CreateProductDto {
   categoryId: string;
 
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(PRODUCT_NAME_MAX_LENGTH)
   name: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(PRODUCT_DESCRIPTION_MAX_LENGTH)
   description?: string;
 
-  @IsNumber()
+  @IsInt()
   @Min(0)
+  @Max(PRODUCT_PRICE_MAX_KURUS)
   priceKurus: number;
 
   @IsOptional()
@@ -146,15 +167,19 @@ class PatchCategoryDto {
 class PatchProductDto {
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(PRODUCT_NAME_MAX_LENGTH)
   name?: string;
 
   @IsOptional()
   @IsString()
+  @MaxLength(PRODUCT_DESCRIPTION_MAX_LENGTH)
   description?: string;
 
   @IsOptional()
-  @IsNumber()
+  @IsInt()
   @Min(0)
+  @Max(PRODUCT_PRICE_MAX_KURUS)
   priceKurus?: number;
 
   @IsOptional()
