@@ -40,6 +40,7 @@ function parsePaged(body, fallbackPageSize) {
  * @param {(message: string, tone?: 'success' | 'error' | 'info') => void} ctx.showToast
  * @param {(btn: HTMLElement | null | undefined, label: string, fn: () => Promise<unknown>) => Promise<unknown>} ctx.withButtonBusy
  * @param {object} ctx.listUi
+ * @param {'categories' | 'products'} ctx.listUi.section
  * @param {number} ctx.listUi.catPage
  * @param {number} ctx.listUi.catPageSize
  * @param {string} ctx.listUi.catQ
@@ -194,57 +195,80 @@ export async function renderMenuList(container, ctx) {
   const prodTo = Math.min(prodTotal, listUi.prodPage * listUi.prodPageSize + prodsPage.length);
   const prodHasPrev = listUi.prodPage > 0;
   const prodHasNext = listUi.prodPage * listUi.prodPageSize + prodsPage.length < prodTotal;
+  const section = listUi.section === 'products' ? 'products' : 'categories';
+  listUi.section = section;
+  const categoriesPanel = `
+    <section class="a-menu-list-panel" aria-labelledby="menu-categories-title">
+      <h2 class="a-h2" id="menu-categories-title">Kategoriler (${catTotal})</h2>
+      <form class="a-history-toolbar" id="menu-cat-search" role="search">
+        <input class="a-input a-history-q" type="search" id="menu-cat-q" name="q" placeholder="Kategori adı veya açıklama ara…" value="${esc(listUi.catQ)}" autocomplete="off" />
+        ${buttonHtml({ label: 'Ara', type: 'submit', icon: 'magnifying-glass' })}
+      </form>
+      <p class="a-muted" id="menu-cat-range">${esc(`${catFrom}–${catTo} / ${catTotal} kayıt`)}</p>
+      <div class="a-table-wrap">
+        <table class="a-table">
+          <thead><tr><th>Kategori</th><th>Görsel</th><th>Sıra</th><th>Durum</th><th></th></tr></thead>
+          <tbody>${catRows || emptyRowHtml('Kategori kaydı yok', 5)}</tbody>
+        </table>
+      </div>
+      <div class="a-history-pager">
+        ${buttonHtml({ label: 'Önceki', id: 'menu-cat-prev', variant: 'secondary', icon: 'caret-left', disabled: !catHasPrev })}
+        <span class="a-muted">Sayfa ${esc(String(listUi.catPage + 1))}</span>
+        ${buttonHtml({ label: 'Sonraki', id: 'menu-cat-next', variant: 'secondary', icon: 'caret-right', disabled: !catHasNext })}
+      </div>
+    </section>`;
+  const productsPanel = `
+    <section class="a-menu-list-panel" aria-labelledby="menu-products-title">
+      <h2 class="a-h2" id="menu-products-title">Ürünler (${prodTotal})</h2>
+      <form class="a-history-toolbar" id="menu-prod-search" role="search">
+        <input class="a-input a-history-q" type="search" id="menu-prod-q" name="q" placeholder="Ürün veya kategori adı ara…" value="${esc(listUi.prodQ)}" autocomplete="off" />
+        ${buttonHtml({ label: 'Ara', type: 'submit', icon: 'magnifying-glass' })}
+      </form>
+      <p class="a-muted" id="menu-prod-range">${esc(`${prodFrom}–${prodTo} / ${prodTotal} kayıt`)}</p>
+      <div class="a-table-wrap">
+        <table class="a-table">
+          <thead><tr><th>Görsel</th><th>Ad</th><th>Kategori</th><th>Fiyat</th><th>Durum</th><th></th></tr></thead>
+          <tbody>${prodRows || emptyRowHtml('Ürün kaydı yok', 6)}</tbody>
+        </table>
+      </div>
+      <div class="a-history-pager">
+        ${buttonHtml({ label: 'Önceki', id: 'menu-prod-prev', variant: 'secondary', icon: 'caret-left', disabled: !prodHasPrev })}
+        <span class="a-muted">Sayfa ${esc(String(listUi.prodPage + 1))}</span>
+        ${buttonHtml({ label: 'Sonraki', id: 'menu-prod-next', variant: 'secondary', icon: 'caret-right', disabled: !prodHasNext })}
+      </div>
+    </section>`;
 
   container.innerHTML = `
-    <div class="a-page-head">
-      <div>
-        <h1 class="a-h1 a-h1--flush">Menü</h1>
-        <p class="a-muted">Kategorileri ve ürünleri yönetin. Düzenlemeler ayrı sayfalarda açılır.</p>
+    <div class="a-list-page">
+      <div class="a-page-head">
+        <div>
+          <h1 class="a-h1 a-h1--flush">Menü</h1>
+          <p class="a-muted">Kategorileri ve ürünleri yönetin. Düzenlemeler ayrı sayfalarda açılır.</p>
+        </div>
+        <div class="a-page-head__actions">
+          ${buttonHtml({ label: 'Yeni kategori', id: 'menu-goto-cat-new', variant: 'secondary', icon: 'folder-plus', classes: 'a-menu-head-btn' })}
+          ${buttonHtml({ label: 'Yeni ürün', id: 'menu-goto-prod-new', icon: 'plus-circle', classes: 'a-menu-head-btn' })}
+        </div>
       </div>
-      <div class="a-page-head__actions">
-        ${buttonHtml({ label: 'Yeni kategori', id: 'menu-goto-cat-new', variant: 'secondary', icon: 'folder-plus', classes: 'a-menu-head-btn' })}
-        ${buttonHtml({ label: 'Yeni ürün', id: 'menu-goto-prod-new', icon: 'plus-circle', classes: 'a-menu-head-btn' })}
+      <div class="a-tabs" role="tablist" aria-label="Menü gösterimi">
+        <button type="button" class="a-tab ${section === 'categories' ? 'active' : ''}" id="menu-section-categories" role="tab" aria-selected="${section === 'categories'}">Kategoriler (${catTotal})</button>
+        <button type="button" class="a-tab ${section === 'products' ? 'active' : ''}" id="menu-section-products" role="tab" aria-selected="${section === 'products'}">Ürünler (${prodTotal})</button>
       </div>
-    </div>
-
-    <h2 class="a-h2">Kategoriler (${catTotal})</h2>
-    <form class="a-history-toolbar" id="menu-cat-search" role="search">
-      <input class="a-input a-history-q" type="search" id="menu-cat-q" name="q" placeholder="Kategori adı veya açıklama ara…" value="${esc(listUi.catQ)}" autocomplete="off" />
-      ${buttonHtml({ label: 'Ara', type: 'submit', icon: 'magnifying-glass' })}
-    </form>
-    <p class="a-muted" id="menu-cat-range">${esc(`${catFrom}–${catTo} / ${catTotal} kayıt`)}</p>
-    <div class="a-table-wrap">
-      <table class="a-table">
-        <thead><tr><th>Kategori</th><th>Görsel</th><th>Sıra</th><th>Durum</th><th></th></tr></thead>
-        <tbody>${catRows || emptyRowHtml('Kategori kaydı yok', 5)}</tbody>
-      </table>
-    </div>
-    <div class="a-history-pager">
-      ${buttonHtml({ label: 'Önceki', id: 'menu-cat-prev', variant: 'secondary', icon: 'caret-left', disabled: !catHasPrev })}
-      <span class="a-muted">Sayfa ${esc(String(listUi.catPage + 1))}</span>
-      ${buttonHtml({ label: 'Sonraki', id: 'menu-cat-next', variant: 'secondary', icon: 'caret-right', disabled: !catHasNext })}
-    </div>
-
-    <h2 class="a-h2">Ürünler (${prodTotal})</h2>
-    <form class="a-history-toolbar" id="menu-prod-search" role="search">
-      <input class="a-input a-history-q" type="search" id="menu-prod-q" name="q" placeholder="Ürün veya kategori adı ara…" value="${esc(listUi.prodQ)}" autocomplete="off" />
-      ${buttonHtml({ label: 'Ara', type: 'submit', icon: 'magnifying-glass' })}
-    </form>
-    <p class="a-muted" id="menu-prod-range">${esc(`${prodFrom}–${prodTo} / ${prodTotal} kayıt`)}</p>
-    <div class="a-table-wrap">
-      <table class="a-table">
-        <thead><tr><th>Görsel</th><th>Ad</th><th>Kategori</th><th>Fiyat</th><th>Durum</th><th></th></tr></thead>
-        <tbody>${prodRows || emptyRowHtml('Ürün kaydı yok', 6)}</tbody>
-      </table>
-    </div>
-    <div class="a-history-pager">
-      ${buttonHtml({ label: 'Önceki', id: 'menu-prod-prev', variant: 'secondary', icon: 'caret-left', disabled: !prodHasPrev })}
-      <span class="a-muted">Sayfa ${esc(String(listUi.prodPage + 1))}</span>
-      ${buttonHtml({ label: 'Sonraki', id: 'menu-prod-next', variant: 'secondary', icon: 'caret-right', disabled: !prodHasNext })}
+      ${section === 'categories' ? categoriesPanel : productsPanel}
     </div>`;
 
   container.querySelector('#menu-goto-cat-new')?.addEventListener('click', onNewCategory);
   container.querySelector('#menu-goto-prod-new')?.addEventListener('click', onNewProduct);
+  container.querySelector('#menu-section-categories')?.addEventListener('click', () => {
+    if (listUi.section === 'categories') return;
+    listUi.section = 'categories';
+    refresh();
+  });
+  container.querySelector('#menu-section-products')?.addEventListener('click', () => {
+    if (listUi.section === 'products') return;
+    listUi.section = 'products';
+    refresh();
+  });
 
   container.querySelector('#menu-cat-search')?.addEventListener('submit', (ev) => {
     ev.preventDefault();

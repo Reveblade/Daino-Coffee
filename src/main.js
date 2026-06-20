@@ -44,8 +44,17 @@ let historyUi = {
   pageSize: 20,
 };
 
+/** Kurye geçmiş sekmesi (aktif görevden ayrı tutulur). */
+let courierHistoryUi = {
+  /** @type {string | null} */
+  detailOrderId: null,
+  page: 0,
+  pageSize: 10,
+};
+
 function defaultMenuListUi() {
   return {
+    section: 'categories',
     catPage: 0,
     catPageSize: 20,
     catQ: '',
@@ -115,23 +124,23 @@ function inPlaceActions(st) {
   if (st === 'PLACED')
     return [
       { act: 'START', label: 'Hazırla' },
-      { act: 'CANCEL', label: 'İptal et' },
+      { act: 'CANCEL', label: 'İptal Et' },
     ];
   if (st === 'IN_PROGRESS')
     return [
-      { act: 'READY', label: 'Teslim edildi' },
-      { act: 'CANCEL', label: 'İptal et' },
+      { act: 'READY', label: 'Masaya Teslim Ettim' },
+      { act: 'CANCEL', label: 'İptal Et' },
     ];
   if (st === 'READY')
     return [
-      { act: 'AWAIT_PAYMENT', label: 'Ödeme bekliyor' },
-      { act: 'MARK_PAID', label: 'Ödendi' },
-      { act: 'CANCEL', label: 'İptal et' },
+      { act: 'AWAIT_PAYMENT', label: 'Ödemeyi Aldım' },
+      { act: 'MARK_PAID', label: 'Ödemeyi Aldım' },
+      { act: 'CANCEL', label: 'İptal Et' },
     ];
   if (st === 'AWAITING_PAYMENT')
     return [
-      { act: 'MARK_PAID', label: 'Ödendi' },
-      { act: 'CANCEL', label: 'İptal et' },
+      { act: 'MARK_PAID', label: 'Ödemeyi Aldım' },
+      { act: 'CANCEL', label: 'İptal Et' },
     ];
   return [];
 }
@@ -141,25 +150,25 @@ function onlineStaffActions(st) {
   if (st === 'PAID' || st === 'CANCELLED') return [];
   if (st === 'PLACED')
     return [
-      { act: 'CONFIRM', label: 'Onayla' },
-      { act: 'CANCEL', label: 'İptal et' },
+      { act: 'CONFIRM', label: 'Siparişi Onayla' },
+      { act: 'CANCEL', label: 'İptal Et' },
     ];
   if (st === 'CONFIRMED')
     return [
       { act: 'START_PREP', label: 'Hazırla' },
-      { act: 'CANCEL', label: 'İptal et' },
+      { act: 'CANCEL', label: 'İptal Et' },
     ];
   if (st === 'IN_PROGRESS')
     return [
-      { act: 'READY_HANDOFF', label: 'Teslime hazır' },
-      { act: 'CANCEL', label: 'İptal et' },
+      { act: 'READY_HANDOFF', label: 'Paketle' },
+      { act: 'CANCEL', label: 'İptal Et' },
     ];
   if (st === 'READY_FOR_HANDOFF')
-    return [{ act: 'CANCEL', label: 'İptal et' }];
+    return [{ act: 'CANCEL', label: 'İptal Et' }];
   if (st === 'AWAITING_CASHIER_PAYMENT')
     return [
-      { act: 'MARK_PAID', label: 'Ödendi' },
-      { act: 'CANCEL', label: 'İptal et' },
+      { act: 'MARK_PAID', label: 'Ödemeyi Aldım' },
+      { act: 'CANCEL', label: 'İptal Et' },
     ];
   return [];
 }
@@ -456,9 +465,9 @@ function canAdminCompleteOrder(o) {
 }
 
 /**
- * Tek ana ileri adım (durum adı buton etiketinde).
+ * Tek ana ileri adım (buton etiketinde durum adı yerine eylem var).
  * @param {object} o
- * @returns {{ kind: 'transition', act: string, targetLabel: string } | { kind: 'assign', targetLabel: string } | null}
+ * @returns {{ kind: 'transition', act: string, actionLabel: string } | { kind: 'assign', actionLabel: string } | null}
  */
 function primaryFlowStep(o) {
   if (isTerminalOrder(o)) return null;
@@ -469,25 +478,25 @@ function primaryFlowStep(o) {
       return {
         kind: 'transition',
         act: 'START',
-        targetLabel: inPlaceStatusTr('IN_PROGRESS'),
+        actionLabel: 'Hazırla',
       };
     if (st === 'IN_PROGRESS')
       return {
         kind: 'transition',
         act: 'READY',
-        targetLabel: inPlaceStatusTr('READY'),
+        actionLabel: 'Masaya Teslim Ettim',
       };
     if (st === 'READY')
       return {
         kind: 'transition',
         act: 'AWAIT_PAYMENT',
-        targetLabel: inPlaceStatusTr('AWAITING_PAYMENT'),
+        actionLabel: 'Ödemeyi Aldım',
       };
     if (st === 'AWAITING_PAYMENT')
       return {
         kind: 'transition',
         act: 'MARK_PAID',
-        targetLabel: inPlaceStatusTr('PAID'),
+        actionLabel: 'Ödemeyi Aldım',
       };
     return null;
   }
@@ -495,29 +504,150 @@ function primaryFlowStep(o) {
     return {
       kind: 'transition',
       act: 'CONFIRM',
-      targetLabel: onlineStatusTr('CONFIRMED'),
+      actionLabel: 'Siparişi Onayla',
     };
   if (st === 'CONFIRMED')
     return {
       kind: 'transition',
       act: 'START_PREP',
-      targetLabel: onlineStatusTr('IN_PROGRESS'),
+      actionLabel: 'Hazırla',
     };
   if (st === 'IN_PROGRESS')
     return {
       kind: 'transition',
       act: 'READY_HANDOFF',
-      targetLabel: onlineStatusTr('READY_FOR_HANDOFF'),
+      actionLabel: 'Paketle',
     };
   if (st === 'READY_FOR_HANDOFF')
-    return { kind: 'assign', targetLabel: onlineStatusTr('ASSIGNED') };
+    return { kind: 'assign', actionLabel: 'Kuryeye Ata' };
   if (st === 'AWAITING_CASHIER_PAYMENT')
     return {
       kind: 'transition',
       act: 'MARK_PAID',
-      targetLabel: onlineStatusTr('PAID'),
+      actionLabel: 'Ödemeyi Aldım',
     };
   return null;
+}
+
+/** @param {object} o */
+function liveOrderEmphasisLabel(o) {
+  const step = primaryFlowStep(o);
+  if (step) return step.actionLabel;
+  if (o?.status === 'PAID') return 'Ödeme Alındı';
+  if (o?.status === 'CANCELLED') return 'Reddedildi';
+  return o?.channel === 'IN_PLACE'
+    ? inPlaceStatusTr(o.status)
+    : onlineStatusTr(o.status);
+}
+
+/** @param {object} o */
+function cashierWorkState(o) {
+  const st = o?.status;
+  if (o?.channel === 'IN_PLACE') {
+    if (st === 'PLACED') {
+      return {
+        tone: 'action',
+        priority: 0,
+        label: 'Kasiyer aksiyonu',
+        note: 'Masa siparişini hazırlamaya başla.',
+      };
+    }
+    if (st === 'IN_PROGRESS') {
+      return {
+        tone: 'action',
+        priority: 0,
+        label: 'Kasiyer aksiyonu',
+        note: 'Ürünleri masaya teslim et.',
+      };
+    }
+    if (st === 'READY') {
+      return {
+        tone: 'payment',
+        priority: 1,
+        label: 'Ürün teslim edildi',
+        note: 'Hazırlık bitti, sadece ödeme akışı kaldı.',
+      };
+    }
+    if (st === 'AWAITING_PAYMENT') {
+      return {
+        tone: 'payment',
+        priority: 1,
+        label: 'Ödeme bekliyor',
+        note: 'Masaya teslim edilmiş sipariş.',
+      };
+    }
+  }
+
+  if (st === 'PLACED') {
+    return {
+      tone: 'action',
+      priority: 0,
+      label: 'Kasiyer aksiyonu',
+      note: 'Online siparişi onayla.',
+    };
+  }
+  if (st === 'CONFIRMED') {
+    return {
+      tone: 'action',
+      priority: 0,
+      label: 'Kasiyer aksiyonu',
+      note: 'Hazırlama sürecini başlat.',
+    };
+  }
+  if (st === 'IN_PROGRESS') {
+    return {
+      tone: 'action',
+      priority: 0,
+      label: 'Kasiyer aksiyonu',
+      note: 'Siparişi kuryeye teslim edilecek hale getir.',
+    };
+  }
+  if (st === 'READY_FOR_HANDOFF') {
+    return {
+      tone: 'action',
+      priority: 0,
+      label: 'Kasiyer aksiyonu',
+      note: 'Kurye seç ve teslimata aktar.',
+    };
+  }
+  if (st === 'AWAITING_CASHIER_PAYMENT') {
+    return {
+      tone: 'payment',
+      priority: 1,
+      label: 'Ödeme bekliyor',
+      note: 'Teslimat tamamlandı, kasiyer ödemeyi kapatmalı.',
+    };
+  }
+  if (st === 'ASSIGNED') {
+    return {
+      tone: 'passive',
+      priority: 2,
+      label: 'Kuryede',
+      note: 'Ürün hazırlama veya kurye verme aksiyonu yok.',
+    };
+  }
+  if (st === 'OUT_FOR_DELIVERY') {
+    return {
+      tone: 'passive',
+      priority: 2,
+      label: 'Yolda',
+      note: 'Kurye teslimatı sürdürüyor.',
+    };
+  }
+  if (st === 'DELIVERED') {
+    return {
+      tone: 'passive',
+      priority: 2,
+      label: 'Teslim edildi',
+      note: 'Ürün aksiyonu tamamlandı.',
+    };
+  }
+  return {
+    tone: 'passive',
+    priority: 2,
+    label: 'Takip',
+    note: 'Kasiyer için aktif ürün aksiyonu yok.',
+  };
 }
 
 /** @param {object} o @returns {string} */
@@ -531,9 +661,8 @@ function orderFlowActionsInnerHtml(o) {
   if (step?.kind === 'transition' && !(adminHasComplete && step.act === 'MARK_PAID')) {
     flow.push(
       buttonHtml({
-        label: step.targetLabel,
+        label: step.actionLabel,
         size: 'compact',
-        icon: 'arrow-right',
         classes: 'a-act',
         attrs: { 'data-id': id, 'data-ch': chEsc, 'data-act': step.act },
       }),
@@ -544,18 +673,18 @@ function orderFlowActionsInnerHtml(o) {
     );
     flow.push(
       buttonHtml({
-        label: step.targetLabel,
+        label: step.actionLabel,
         size: 'compact',
-        icon: 'arrow-right',
         classes: 'a-assign',
         attrs: { 'data-id': id },
       }),
     );
   }
   if (adminHasComplete) {
+    const completeLabel = step?.act === 'MARK_PAID' ? 'Ödemeyi Aldım' : 'Siparişi Tamamla';
     admin.push(
       buttonHtml({
-        label: 'Tamamla',
+        label: completeLabel,
         variant: 'secondary',
         size: 'compact',
         icon: 'check-circle',
@@ -567,7 +696,7 @@ function orderFlowActionsInnerHtml(o) {
   if (canCancelOrder(o)) {
     admin.push(
       buttonHtml({
-        label: 'İptal',
+        label: 'İptal Et',
         variant: 'danger',
         size: 'compact',
         icon: 'x-circle',
@@ -582,7 +711,7 @@ function orderFlowActionsInnerHtml(o) {
   }
   if (admin.length) {
     sections.push(
-      `<div class="a-order-card__admin-actions"><span>Hızlı durum</span>${admin.join('')}</div>`,
+      `<div class="a-order-card__admin-actions"><span>Diğer işlemler</span>${admin.join('')}</div>`,
     );
   }
   return sections.join('');
@@ -680,10 +809,7 @@ function liveOrderCardHtml(o) {
   const ch = o.channel;
   const chLabel = esc(channelLabelTr(ch));
   const stRaw = esc(o.status);
-  const stLabel =
-    ch === 'IN_PLACE'
-      ? esc(inPlaceStatusTr(o.status))
-      : esc(onlineStatusTr(o.status));
+  const stLabel = esc(liveOrderEmphasisLabel(o));
   const masa = ch === 'IN_PLACE' ? tableNumberCell(o) : '—';
   const itemsSummary = esc(orderItemsSummary(o));
   const itemsHtml = liveOrderItemsHtml(o);
@@ -697,7 +823,11 @@ function liveOrderCardHtml(o) {
       ? `<p class="a-muted a-order-card__son" title="${esc(addDisp.title)}">${esc(addDisp.text)}</p>`
       : '';
   const actions = orderFlowActionsInnerHtml(o);
-  return `<article class="a-order-card">
+  const work = cashierWorkState(o);
+  const workTone = esc(work.tone);
+  const workLabel = esc(work.label);
+  const workNote = esc(work.note);
+  return `<article class="a-order-card a-order-card--${workTone}">
     <div class="a-order-card__head">
       <div>
         <span class="a-order-card__eyebrow">Sipariş</span>
@@ -713,7 +843,11 @@ function liveOrderCardHtml(o) {
           })}
         </div>
       </div>
-      <span class="a-order-card__status" title="${stRaw}">${stLabel}</span>
+      <span class="a-order-card__status a-order-card__status--${workTone}" title="${stRaw}">${stLabel}</span>
+    </div>
+    <div class="a-order-card__work a-order-card__work--${workTone}">
+      <span>${workLabel}</span>
+      <p>${workNote}</p>
     </div>
     <div class="a-order-card__meta-grid">
       <span><small>Kanal</small><strong>${chLabel}</strong></span>
@@ -834,6 +968,7 @@ function notifyInterestingStaffOrderChanges(orders) {
 
 function applyView(nextView) {
   historyUi.detailOrderId = null;
+  if (nextView !== 'courier-history') courierHistoryUi.detailOrderId = null;
   if (nextView !== 'menu') menuUi = { sub: 'list', id: null, list: defaultMenuListUi() };
   view = nextView;
   const root = document.getElementById('root');
@@ -848,109 +983,295 @@ function applyView(nextView) {
 async function renderLogin(root) {
   root.innerHTML = `
     <div class="a-login">
-      <div class="a-brand a-h1--flush"><span class="a-brand-logo" aria-hidden="true"></span>DAINO</div>
-      <p class="a-muted">Operasyon paneli — yetkili telefon veya sahip girişi.</p>
-      <div class="a-tabs" id="login-tabs">
-        <button type="button" class="a-tab active" data-tab="otp">Personel (SMS)</button>
-        <button type="button" class="a-tab" data-tab="owner">Sahip</button>
+      <aside class="a-login-hero">
+        <div class="a-brand a-h1--flush"><span class="a-brand-logo" aria-hidden="true"></span>DAINO</div>
+        <p class="a-login-kicker">Authority Panel</p>
+        <h1 class="a-login-title">Operasyon merkezine güvenli giriş</h1>
+        <p class="a-login-copy">Personel hesabı için SMS doğrulama, sahip hesabı için yetkili şifre kontrolü kullanılır.</p>
+        <div class="a-login-security-grid" aria-label="Güvenlik özellikleri">
+          <span><i class="ph ph-shield-check" aria-hidden="true"></i> Rol bazlı erişim</span>
+          <span><i class="ph ph-device-mobile" aria-hidden="true"></i> Tek kullanımlık kod</span>
+          <span><i class="ph ph-timer" aria-hidden="true"></i> Süreli oturum</span>
+          <span><i class="ph ph-lock-key" aria-hidden="true"></i> Sahip şifresi</span>
+        </div>
+      </aside>
+      <div class="a-login-panel">
+        <div class="a-login-steps" id="login-steps" aria-label="Giriş aşamaları">
+          <span class="active" data-step="credentials">1. Bilgiler</span>
+          <span data-step="verify">2. Doğrulama</span>
+        </div>
+        <div id="login-pane"></div>
+        <p class="a-error" id="login-err"></p>
       </div>
-      <div id="login-pane"></div>
-      <p class="a-error" id="login-err"></p>
     </div>`;
 
   const pane = root.querySelector('#login-pane');
   const err = root.querySelector('#login-err');
+  const steps = root.querySelector('#login-steps');
+  const state = {
+    method: 'staff',
+    step: 'credentials',
+    phone: '',
+    password: '',
+    code: '',
+  };
 
-  function showOtp() {
-    err.textContent = '';
-    pane.innerHTML = `
-      <label class="a-muted">Telefon</label>
-      <input class="a-input a-login-field" id="otp-phone" placeholder="+905…" autocomplete="tel" />
-      ${buttonHtml({ label: 'Kod gönder', id: 'otp-send', icon: 'paper-plane-tilt' })}
-      <div class="a-login-gap">
-        <label class="a-muted">Kod</label>
-        <input class="a-input a-login-field" id="otp-code" maxlength="6" placeholder="6 hane" inputmode="numeric" autocomplete="one-time-code" />
-        ${buttonHtml({ label: 'Giriş', id: 'otp-verify', icon: 'sign-in' })}
+  function syncCredentialsFromDom() {
+    state.phone = pane.querySelector('#auth-phone')?.value.trim() ?? state.phone;
+    state.password = pane.querySelector('#auth-password')?.value ?? state.password;
+  }
+
+  function setError(message = '') {
+    err.textContent = message;
+  }
+
+  function enterApp(tokens, nextView) {
+    setToken(tokens.accessToken, tokens.refreshToken);
+    screen = 'app';
+    view = nextView;
+    render();
+  }
+
+  function updateSteps() {
+    steps?.querySelectorAll('[data-step]').forEach((step) => {
+      const isCredentials = step.dataset.step === 'credentials';
+      step.classList.toggle('active', state.step === step.dataset.step);
+      step.classList.toggle('done', state.step === 'verify' && isCredentials);
+    });
+  }
+
+  function credentialHtml() {
+    const isOwner = state.method === 'owner';
+    return `
+      <div class="a-login-pane-head">
+        <p class="a-login-kicker">Giriş yöntemi</p>
+        <h2>Hesap türünü seç</h2>
+        <p class="a-muted">Telefon numaranı gir; personel hesabında ikinci adımda SMS kodunu doğrulayacaksın.</p>
+      </div>
+      <div class="a-login-methods" role="group" aria-label="Giriş yöntemi">
+        <button type="button" class="a-login-method ${state.method === 'staff' ? 'active' : ''}" data-method="staff">
+          <i class="ph ph-identification-card" aria-hidden="true"></i>
+          <strong>Personel 2FA</strong>
+          <span>SMS kodu ile iki aşamalı giriş</span>
+        </button>
+        <button type="button" class="a-login-method ${isOwner ? 'active' : ''}" data-method="owner">
+          <i class="ph ph-crown-simple" aria-hidden="true"></i>
+          <strong>Sahip</strong>
+          <span>Telefon ve yönetici şifresi</span>
+        </button>
+      </div>
+      <label class="a-field-label" for="auth-phone">Yetkili telefon</label>
+      <input class="a-input a-login-field" id="auth-phone" placeholder="+905…" autocomplete="tel" inputmode="tel" value="${esc(state.phone)}" />
+      <div class="a-login-owner-fields ${isOwner ? '' : 'is-hidden'}">
+        <label class="a-field-label" for="auth-password">Sahip şifresi</label>
+        <input class="a-input a-login-field" id="auth-password" type="password" autocomplete="current-password" placeholder="En az 8 karakter" value="${esc(state.password)}" />
+      </div>
+      <div class="a-login-actions">
+        ${buttonHtml({ label: isOwner ? 'Sahip girişi' : 'Kod gönder', id: 'auth-next', icon: isOwner ? 'sign-in' : 'paper-plane-tilt' })}
+      </div>
+      <div class="a-login-hints">
+        <span><i class="ph ph-key" aria-hidden="true"></i> Kodu kimseyle paylaşma</span>
+        <span><i class="ph ph-bell-ringing" aria-hidden="true"></i> SMS bildirimi aktif olmalı</span>
       </div>`;
-    pane.querySelector('#otp-send').onclick = async () => {
-      err.textContent = '';
-      await withButtonBusy(pane.querySelector('#otp-send'), 'Gönderiliyor…', async () => {
-        try {
-          await api('/auth/otp/request', {
-            method: 'POST',
-            body: JSON.stringify({
-              phone: pane.querySelector('#otp-phone').value.trim(),
-            }),
-          });
-          showToast('Kod gönderildi.', 'success');
-          /** @type {HTMLElement | null} */ (pane.querySelector('#otp-code'))?.focus();
-        } catch (e) {
-          err.textContent = errorMessage(e);
-        }
-      });
-    };
-    pane.querySelector('#otp-verify').onclick = async () => {
-      err.textContent = '';
-      await withButtonBusy(pane.querySelector('#otp-verify'), 'Giriş yapılıyor…', async () => {
-        try {
-          const { accessToken, refreshToken } = await api('/auth/otp/verify', {
-            method: 'POST',
-            body: JSON.stringify({
-              phone: pane.querySelector('#otp-phone').value.trim(),
-              code: pane.querySelector('#otp-code').value.trim(),
-            }),
-          });
-          setToken(accessToken, refreshToken);
-          screen = 'app';
-          view = isCourier() ? 'courier' : 'orders';
-          render();
-        } catch (e) {
-          err.textContent = errorMessage(e);
-        }
-      });
-    };
   }
 
-  function showOwner() {
+  function codeDigitsHtml() {
+    return Array.from({ length: 6 }, (_, index) => {
+      const value = state.code[index] ?? '';
+      return `<input class="a-login-otp-input" data-otp-index="${index}" maxlength="1" inputmode="numeric" autocomplete="${index === 0 ? 'one-time-code' : 'off'}" aria-label="Kod hanesi ${index + 1}" value="${esc(value)}" />`;
+    }).join('');
+  }
+
+  function keypadHtml() {
+    return ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'Temizle', '0', 'Sil']
+      .map((key) => `<button type="button" class="a-login-key" data-key="${esc(key)}">${esc(key)}</button>`)
+      .join('');
+  }
+
+  function verifyHtml() {
+    const maskedPhone = state.phone || '+905…';
+    return `
+      <div class="a-login-pane-head">
+        <p class="a-login-kicker">SMS doğrulama</p>
+        <h2>6 haneli kodu gir</h2>
+        <p class="a-muted">${esc(maskedPhone)} numarasına gönderilen tek kullanımlık kodu kullan.</p>
+      </div>
+      <div class="a-login-otp" id="otp-digits">${codeDigitsHtml()}</div>
+      <div class="a-login-keypad" aria-label="Kod tuş takımı">${keypadHtml()}</div>
+      <div class="a-login-actions a-login-actions--split">
+        ${buttonHtml({ label: 'Geri dön', id: 'auth-back', variant: 'secondary' })}
+        ${buttonHtml({ label: 'Kodu doğrula', id: 'auth-verify', icon: 'shield-check' })}
+      </div>
+      <div class="a-login-subactions">
+        <button type="button" id="auth-resend">Kodu tekrar gönder</button>
+        <span>Deneme hakkını korumak için kodu dikkatli gir.</span>
+      </div>`;
+  }
+
+  function setCode(nextCode) {
+    state.code = nextCode.replace(/\D/g, '').slice(0, 6);
+    const box = pane.querySelector('#otp-digits');
+    if (box) box.innerHTML = codeDigitsHtml();
+    bindOtpInputs();
+    const nextInput =
+      pane.querySelector(`[data-otp-index="${Math.min(state.code.length, 5)}"]`) ??
+      pane.querySelector('[data-otp-index="5"]');
+    if (nextInput instanceof HTMLElement) nextInput.focus();
+  }
+
+  function bindOtpInputs() {
+    pane.querySelectorAll('.a-login-otp-input').forEach((input) => {
+      input.addEventListener('input', () => {
+        const digits = [...pane.querySelectorAll('.a-login-otp-input')]
+          .map((el) => el.value.replace(/\D/g, '').slice(-1))
+          .join('');
+        setCode(digits);
+      });
+      input.addEventListener('paste', (event) => {
+        const text = event.clipboardData?.getData('text') ?? '';
+        if (text) {
+          event.preventDefault();
+          setCode(text);
+        }
+      });
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Backspace' && !input.value) {
+          setCode(state.code.slice(0, -1));
+        }
+      });
+    });
+  }
+
+  async function requestStaffCode(btn) {
     err.textContent = '';
-    pane.innerHTML = `
-      <label class="a-muted">Telefon (OWNER_PHONE_E164)</label>
-      <input class="a-input a-login-field" id="ow-phone" autocomplete="tel" />
-      <label class="a-muted">Şifre</label>
-      <input class="a-input a-login-field" id="ow-pass" type="password" autocomplete="current-password" />
-      ${buttonHtml({ label: 'Giriş', id: 'ow-go', icon: 'sign-in' })}`;
-    pane.querySelector('#ow-go').onclick = async () => {
-      err.textContent = '';
-      await withButtonBusy(pane.querySelector('#ow-go'), 'Giriş yapılıyor…', async () => {
-        try {
-          const { accessToken, refreshToken } = await api('/auth/owner/login', {
-            method: 'POST',
-            body: JSON.stringify({
-              phone: pane.querySelector('#ow-phone').value.trim(),
-              password: pane.querySelector('#ow-pass').value,
-            }),
-          });
-          setToken(accessToken, refreshToken);
-          screen = 'app';
-          view = 'orders';
-          render();
-        } catch (e) {
-          err.textContent = errorMessage(e);
-        }
+    syncCredentialsFromDom();
+    if (!state.phone) {
+      setError('Telefon numarası girin.');
+      return;
+    }
+    await withButtonBusy(btn, 'Kod gönderiliyor…', async () => {
+      try {
+        await api('/auth/otp/request', {
+          method: 'POST',
+          body: JSON.stringify({ phone: state.phone }),
+        });
+        state.step = 'verify';
+        state.code = '';
+        showToast('Doğrulama kodu gönderildi.', 'success');
+        renderPane();
+      } catch (e) {
+        setError(errorMessage(e));
+      }
+    });
+  }
+
+  async function verifyStaffCode(btn) {
+    setError('');
+    if (state.code.length !== 6) {
+      setError('6 haneli doğrulama kodunu girin.');
+      return;
+    }
+    await withButtonBusy(btn, 'Doğrulanıyor…', async () => {
+      try {
+        const tokens = await api('/auth/otp/verify', {
+          method: 'POST',
+          body: JSON.stringify({
+            phone: state.phone,
+            code: state.code,
+          }),
+        });
+        enterApp(tokens, isCourier() ? 'courier' : 'orders');
+      } catch (e) {
+        setError(errorMessage(e));
+      }
+    });
+  }
+
+  async function ownerLogin(btn) {
+    setError('');
+    syncCredentialsFromDom();
+    if (!state.phone || !state.password) {
+      setError('Telefon ve şifre alanlarını doldurun.');
+      return;
+    }
+    await withButtonBusy(btn, 'Giriş yapılıyor…', async () => {
+      try {
+        const tokens = await api('/auth/owner/login', {
+          method: 'POST',
+          body: JSON.stringify({
+            phone: state.phone,
+            password: state.password,
+          }),
+        });
+        enterApp(tokens, 'orders');
+      } catch (e) {
+        setError(errorMessage(e));
+      }
+    });
+  }
+
+  function bindCredentials() {
+    pane.onkeydown = null;
+    pane.querySelectorAll('[data-method]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        syncCredentialsFromDom();
+        state.method = btn.dataset.method === 'owner' ? 'owner' : 'staff';
+        setError('');
+        renderPane();
       });
+    });
+    pane.querySelector('#auth-next')?.addEventListener('click', (event) => {
+      const btn = /** @type {HTMLElement} */ (event.currentTarget);
+      if (state.method === 'owner') ownerLogin(btn);
+      else requestStaffCode(btn);
+    });
+    pane.querySelector('#auth-phone')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') pane.querySelector('#auth-next')?.click();
+    });
+    pane.querySelector('#auth-password')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') pane.querySelector('#auth-next')?.click();
+    });
+  }
+
+  function bindVerify() {
+    bindOtpInputs();
+    pane.querySelectorAll('[data-key]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.key ?? '';
+        if (key === 'Sil') setCode(state.code.slice(0, -1));
+        else if (key === 'Temizle') setCode('');
+        else setCode(`${state.code}${key}`);
+      });
+    });
+    pane.querySelector('#auth-back')?.addEventListener('click', () => {
+      state.step = 'credentials';
+      setError('');
+      renderPane();
+    });
+    pane.querySelector('#auth-resend')?.addEventListener('click', (event) => {
+      requestStaffCode(/** @type {HTMLElement} */ (event.currentTarget));
+    });
+    pane.querySelector('#auth-verify')?.addEventListener('click', (event) => {
+      verifyStaffCode(/** @type {HTMLElement} */ (event.currentTarget));
+    });
+    pane.onkeydown = (event) => {
+      if (event.key === 'Enter') pane.querySelector('#auth-verify')?.click();
     };
   }
 
-  showOtp();
-  root.querySelectorAll('#login-tabs .a-tab').forEach((btn) => {
-    btn.onclick = () => {
-      root.querySelectorAll('#login-tabs .a-tab').forEach((b) =>
-        b.classList.toggle('active', b === btn),
-      );
-      if (btn.dataset.tab === 'owner') showOwner();
-      else showOtp();
-    };
-  });
+  function renderPane() {
+    updateSteps();
+    pane.innerHTML = state.step === 'verify' ? verifyHtml() : credentialHtml();
+    if (state.step === 'verify') {
+      bindVerify();
+      /** @type {HTMLElement | null} */ (pane.querySelector('[data-otp-index="0"]'))?.focus();
+    } else {
+      bindCredentials();
+      /** @type {HTMLElement | null} */ (pane.querySelector('#auth-phone'))?.focus();
+    }
+  }
+
+  renderPane();
 }
 
 function navButton(label, key) {
@@ -963,6 +1284,7 @@ function navButton(label, key) {
     tables: 'qr-code',
     menu: 'fork-knife',
     courier: 'scooter',
+    'courier-history': 'clock-counter-clockwise',
   };
   const icon = icons[key] ? `<i class="ph ph-${esc(icons[key])}" aria-hidden="true"></i>` : '';
   return `<button type="button" class="a-nav-btn ${active}" data-view="${key}">${icon}<span>${esc(label)}</span></button>`;
@@ -979,7 +1301,10 @@ async function renderOrders(container) {
   rememberStaffOrderAlertSnapshot(orders);
 
   const live = orders.filter((o) => !isTerminalOrder(o));
-  live.sort((a, b) => orderAttentionTimeMs(b) - orderAttentionTimeMs(a));
+  live.sort((a, b) => {
+    const priorityDiff = cashierWorkState(a).priority - cashierWorkState(b).priority;
+    return priorityDiff || orderAttentionTimeMs(b) - orderAttentionTimeMs(a);
+  });
 
   const cardsHtml =
     live.length > 0
@@ -987,10 +1312,7 @@ async function renderOrders(container) {
       : `<div class="a-card a-muted">Aktif sipariş yok.</div>`;
 
   container.innerHTML = `
-    <h1 class="a-h1">Siparişler</h1>
-    <p class="a-muted">Canlı siparişler ilk yüklemeden sonra WebSocket bildirimiyle güncellenir.</p>
-    <p class="a-muted a-status-note"><a class="a-inline-link" href="#" id="a-goto-history">Geçmiş siparişler</a></p>
-    <h2 class="a-h2">Canlı siparişler</h2>
+    <h1 class="a-h1">CANLI SİPARİŞLER</h1>
     ${cardsHtml}`;
 
   const histLink = container.querySelector('#a-goto-history');
@@ -1141,25 +1463,26 @@ async function renderOrderHistory(container) {
   const hasNext = page * pageSize + items.length < total;
 
   container.innerHTML = `
-    <h1 class="a-h1">Geçmiş siparişler</h1>
-    <p class="a-muted"><a class="a-inline-link" href="#" id="a-goto-live">Canlı siparişlere dön</a></p>
-    ${histNote}
-    <form class="a-history-toolbar" id="hist-search-form" role="search">
-      <input class="a-input a-history-q" type="search" id="hist-q" name="q" placeholder="Sipariş no, ürün veya adres ara…" value="${esc(historyUi.q)}" autocomplete="off" />
-      <input class="a-input a-history-table" type="number" min="0" step="1" inputmode="numeric" id="hist-table-number" name="tableNumber" placeholder="Masa no" value="${esc(historyUi.tableNumber)}" autocomplete="off" />
-      ${buttonHtml({ label: 'Ara', id: 'hist-submit', type: 'submit', icon: 'magnifying-glass' })}
-    </form>
-    <p class="a-muted" id="hist-range">${esc(`${fromN}–${toN} / ${total} kayıt`)}</p>
-    <div class="a-table-wrap">
-      <table class="a-table">
-        <thead><tr><th>ID</th><th>Kanal</th><th>Masa</th><th>Ürünler</th><th>Durum</th><th>Güncellendi</th><th></th></tr></thead>
-        <tbody id="hist-tbody">${histRows || emptyRowHtml('Kayıt yok', emptyColspan)}</tbody>
-      </table>
-    </div>
-    <div class="a-history-pager">
-      ${buttonHtml({ label: 'Önceki', id: 'hist-prev', variant: 'secondary', icon: 'caret-left', disabled: !hasPrev })}
-      <span class="a-muted">Sayfa ${esc(String(page + 1))}</span>
-      ${buttonHtml({ label: 'Sonraki', id: 'hist-next', variant: 'secondary', icon: 'caret-right', disabled: !hasNext })}
+    <div class="a-list-page">
+      <h1 class="a-h1">Geçmiş siparişler</h1>
+      ${histNote}
+      <form class="a-history-toolbar" id="hist-search-form" role="search">
+        <input class="a-input a-history-q" type="search" id="hist-q" name="q" placeholder="Sipariş no, ürün veya adres ara…" value="${esc(historyUi.q)}" autocomplete="off" />
+        <input class="a-input a-history-table" type="number" min="0" step="1" inputmode="numeric" id="hist-table-number" name="tableNumber" placeholder="Masa no" value="${esc(historyUi.tableNumber)}" autocomplete="off" />
+        ${buttonHtml({ label: 'Ara', id: 'hist-submit', type: 'submit', icon: 'magnifying-glass' })}
+      </form>
+      <p class="a-muted" id="hist-range">${esc(`${fromN}–${toN} / ${total} kayıt`)}</p>
+      <div class="a-table-wrap">
+        <table class="a-table">
+          <thead><tr><th>ID</th><th>Kanal</th><th>Masa</th><th>Ürünler</th><th>Durum</th><th>Güncellendi</th><th></th></tr></thead>
+          <tbody id="hist-tbody">${histRows || emptyRowHtml('Kayıt yok', emptyColspan)}</tbody>
+        </table>
+      </div>
+      <div class="a-history-pager">
+        ${buttonHtml({ label: 'Önceki', id: 'hist-prev', variant: 'secondary', icon: 'caret-left', disabled: !hasPrev })}
+        <span class="a-muted">Sayfa ${esc(String(page + 1))}</span>
+        ${buttonHtml({ label: 'Sonraki', id: 'hist-next', variant: 'secondary', icon: 'caret-right', disabled: !hasNext })}
+      </div>
     </div>`;
 
   container.querySelector('#a-goto-live')?.addEventListener('click', (ev) => {
@@ -1247,8 +1570,15 @@ function orderHistoryDetailEntryRow(h) {
   return `<tr><td class="a-muted">${esc(at)}</td><td>${from} → ${to}</td><td>${note}</td></tr>`;
 }
 
-/** @param {HTMLElement} container @param {string} orderId */
-async function renderOrderHistoryDetail(container, orderId) {
+/**
+ * @param {HTMLElement} container
+ * @param {string} orderId
+ * @param {{ detailState?: { detailOrderId: string | null }, backView?: string, backLabel?: string }} [opts]
+ */
+async function renderOrderHistoryDetail(container, orderId, opts = {}) {
+  const detailState = opts.detailState ?? historyUi;
+  const backView = opts.backView ?? 'history';
+  const backLabel = opts.backLabel ?? 'Geçmiş listesine dön';
   /** @type {object | null} */
   let o = null;
   try {
@@ -1258,7 +1588,8 @@ async function renderOrderHistoryDetail(container, orderId) {
       <p class="a-error">${esc(e.message)}</p>
       <p>${buttonHtml({ label: 'Listeye dön', id: 'hist-det-fallback', variant: 'secondary', icon: 'arrow-left' })}</p>`;
     container.querySelector('#hist-det-fallback')?.addEventListener('click', () => {
-      historyUi.detailOrderId = null;
+      detailState.detailOrderId = null;
+      view = backView;
       renderMain().catch(console.error);
     });
     return;
@@ -1317,7 +1648,7 @@ async function renderOrderHistoryDetail(container, orderId) {
 
   container.innerHTML = `
     <h1 class="a-h1">Sipariş detayı</h1>
-    <p class="a-muted">${buttonHtml({ label: 'Geçmiş listesine dön', id: 'hist-det-back', variant: 'secondary', icon: 'arrow-left' })}</p>
+    <p class="a-muted">${buttonHtml({ label: backLabel, id: 'hist-det-back', variant: 'secondary', icon: 'arrow-left' })}</p>
     <div class="a-card a-order-detail-block">
       <div class="a-row">
         <div>
@@ -1351,46 +1682,119 @@ async function renderOrderHistoryDetail(container, orderId) {
     </div>`;
 
   container.querySelector('#hist-det-back')?.addEventListener('click', () => {
-    historyUi.detailOrderId = null;
+    detailState.detailOrderId = null;
+    view = backView;
     renderMain().catch(console.error);
   });
 }
 
+/** @param {object} o */
+function courierRecipientLine(o) {
+  const rec = o?.deliveryRecipient;
+  if (!rec || typeof rec !== 'object') return 'Alıcı bilgisi yok';
+  const fullName = [rec.firstName, rec.lastName]
+    .map((x) => String(x ?? '').trim())
+    .filter(Boolean)
+    .join(' ');
+  const phone = rec.phoneE164 ? formatPhoneTrDisplay(String(rec.phoneE164)) : '';
+  return [fullName, phone].filter(Boolean).join(' · ') || 'Alıcı bilgisi yok';
+}
+
+/** @param {object} o */
+function courierPhoneActionHtml(o) {
+  const phone = o?.deliveryRecipient?.phoneE164;
+  if (!phone) return '';
+  return `<a class="a-btn a-btn--secondary a-courier-phone" href="tel:${esc(String(phone))}"><i class="ph ph-phone" aria-hidden="true"></i><span>Ara</span></a>`;
+}
+
+/** @param {object} o */
+function courierAddressLine(o) {
+  const addr = o?.deliveryAddress;
+  if (!addr || typeof addr !== 'object') return 'Teslimat adresi yok';
+  const districtCity = [addr.district, addr.city]
+    .map((x) => String(x ?? '').trim())
+    .filter(Boolean)
+    .join(' / ');
+  return [addr.label, addr.line1, addr.line2, districtCity]
+    .map((x) => String(x ?? '').trim())
+    .filter(Boolean)
+    .join(', ') || 'Teslimat adresi yok';
+}
+
+/** @param {object} o */
+function courierTaskHtml(o) {
+  const rawId = idStr(o);
+  const shortId = rawId.length >= 8 ? rawId.slice(-8) : rawId;
+  const status = o?.status;
+  const isPickup = status === 'ASSIGNED';
+  const isDelivery = status === 'OUT_FOR_DELIVERY';
+  const itemsHtml = liveOrderItemsHtml(o);
+  const recipient = esc(courierRecipientLine(o));
+  const address = esc(courierAddressLine(o));
+  const phoneAction = courierPhoneActionHtml(o);
+  const total = esc(formatTryFromKurus(o?.totalKurus));
+  const createdAt = esc(formatDateTimeTr(o?.createdAt));
+  const stateHtml = isPickup
+    ? `<section class="a-courier-state-card">
+        <span class="a-courier-step__kicker">Şu anki görev</span>
+        <h2>Ürünleri teslim al</h2>
+        <p class="a-muted">Dükkandan aşağıdaki ürünleri eksiksiz aldığını kontrol et. Hazır olduğunda yola çık.</p>
+        <div class="a-courier-step__panel">
+          ${itemsHtml}
+          <div class="a-courier-step__actions">
+            ${buttonHtml({ label: 'Yola çıktım', id: 'c-start', icon: 'navigation-arrow' })}
+          </div>
+        </div>
+      </section>`
+    : isDelivery
+      ? `<section class="a-courier-state-card">
+          <span class="a-courier-step__kicker">Şu anki görev</span>
+          <h2>Adrese teslim et</h2>
+          <p class="a-muted">Adrese ulaştığında müşteriyi ara, ödemeyi seç ve teslimi onayla.</p>
+          <div class="a-courier-step__panel">
+            <div class="a-courier-destination">
+              <p><strong>Alıcı</strong><span>${recipient}</span></p>
+              <p><strong>Adres</strong><span>${address}</span></p>
+            </div>
+            <div class="a-courier-step__actions">
+              ${phoneAction}
+              ${buttonHtml({ label: 'Teslim ettim · POS', id: 'c-pos', variant: 'secondary', icon: 'credit-card' })}
+              ${buttonHtml({ label: 'Teslim ettim · Nakit', id: 'c-cash', variant: 'secondary', icon: 'money' })}
+            </div>
+          </div>
+        </section>`
+      : `<section class="a-courier-state-card">
+          <span class="a-courier-step__kicker">Takip</span>
+          <h2>Görev güncelleniyor</h2>
+          <p class="a-muted">Bu teslimat için aktif kurye aksiyonu bulunamadı.</p>
+        </section>`;
+
+  return `<article class="a-courier-mission">
+    <div class="a-courier-hero">
+      <span class="a-order-card__eyebrow">Aktif görev</span>
+      <div class="a-row">
+        <h1 class="a-h1">Teslimat görevi</h1>
+        <span class="a-badge">${esc(onlineStatusTr(status))}</span>
+      </div>
+      <p class="a-muted">Sipariş <code>${esc(shortId)}</code> · ${total} · ${createdAt}</p>
+    </div>
+    ${stateHtml}
+  </article>`;
+}
+
 async function renderCourier(container) {
   let cur = null;
-  let hist = [];
   try {
     cur = await api('/courier/orders/current');
-    hist = await api('/courier/orders/history?limit=30');
   } catch (e) {
     container.innerHTML = `<p class="a-error">${esc(e.message)}</p>`;
     return;
   }
-  const curHtml = cur
-    ? `<div class="a-card">
-         <div class="a-row"><strong>Güncel</strong><span class="a-badge">${esc(cur.status)}</span></div>
-         <p class="a-muted">Sipariş: <code>${esc(cur._id)}</code></p>
-         <div class="a-action-row a-section-top">
-           ${buttonHtml({ label: 'Yola çıktım', id: 'c-start', icon: 'navigation-arrow' })}
-           ${buttonHtml({ label: 'Teslim + POS', id: 'c-pos', variant: 'secondary', icon: 'credit-card' })}
-           ${buttonHtml({ label: 'Teslim + nakit', id: 'c-cash', variant: 'secondary', icon: 'money' })}
-         </div>
-       </div>`
-    : `<div class="a-card a-muted">Atanmış aktif teslimat yok.</div>`;
 
-  const histRows = (hist || [])
-    .map(
-      (o) =>
-        `<tr><td><code>${esc(String(o._id).slice(-8))}</code></td><td>${esc(o.status)}</td></tr>`,
-    )
-    .join('');
-
-  container.innerHTML = `
-    <h1 class="a-h1">Kurye</h1>
-    ${curHtml}
-    <h2 class="a-h2">Geçmiş</h2>
-    <div class="a-table-wrap"><table class="a-table"><thead><tr><th>ID</th><th>Durum</th></tr></thead>
-    <tbody>${histRows || emptyRowHtml('Kayıt yok', 2)}</tbody></table></div>`;
+  container.innerHTML = cur
+    ? courierTaskHtml(cur)
+    : `<h1 class="a-h1">Görevler</h1>
+       <div class="a-card a-empty-state">Atanmış aktif teslimat yok. Yeni görev geldiğinde bu ekran otomatik güncellenir.</div>`;
 
   const id = cur?._id;
   const q = (method, body) =>
@@ -1399,11 +1803,7 @@ async function renderCourier(container) {
       body: body ? JSON.stringify(body) : undefined,
     });
 
-  const btn = (sel, fn) => {
-    const b = container.querySelector(sel);
-    if (b) b.onclick = fn;
-  };
-  btn('#c-start', async () => {
+  container.querySelector('#c-start')?.addEventListener('click', async () => {
     if (!id) return;
     try {
       await withButtonBusy(container.querySelector('#c-start'), 'Güncelleniyor…', async () => {
@@ -1415,29 +1815,120 @@ async function renderCourier(container) {
       showToast(errorMessage(e), 'error');
     }
   });
-  btn('#c-pos', async () => {
+
+  const deliver = async (buttonSelector, collectionMethod, label) => {
     if (!id) return;
+    const ok = await showConfirmDialog({
+      title: 'Teslimatı onayla',
+      message: `${label} olarak teslim ettim diyorsun. Emin misin?`,
+      confirmLabel: 'Evet, teslim ettim',
+    });
+    if (!ok) return;
     try {
-      await withButtonBusy(container.querySelector('#c-pos'), 'Tamamlanıyor…', async () => {
-        await q('/deliver', { collectionMethod: 'POS' });
+      await withButtonBusy(container.querySelector(buttonSelector), 'Tamamlanıyor…', async () => {
+        await q('/deliver', { collectionMethod });
         showToast('Teslimat tamamlandı.', 'success');
         await renderCourier(container);
       });
     } catch (e) {
       showToast(errorMessage(e), 'error');
     }
+  };
+
+  container.querySelector('#c-pos')?.addEventListener('click', () => deliver('#c-pos', 'POS', 'POS'));
+  container.querySelector('#c-cash')?.addEventListener('click', () => deliver('#c-cash', 'CASH', 'nakit'));
+}
+
+/** @param {object} o */
+function courierHistoryRowHtml(o) {
+  const rawId = idStr(o);
+  const shortId = rawId.length >= 8 ? rawId.slice(-8) : rawId;
+  const status = onlineStatusTr(o?.status);
+  const updatedAt = formatDateTimeTr(o?.updatedAt);
+  const recipient = courierRecipientLine(o);
+  return `<tr>
+    <td><code>${esc(shortId)}</code></td>
+    <td>${esc(status)}</td>
+    <td>${esc(recipient)}</td>
+    <td class="a-muted">${esc(updatedAt)}</td>
+    <td><div class="a-table-actions">${buttonHtml({ label: 'İncele', variant: 'secondary', size: 'compact', icon: 'info', classes: 'a-courier-history-detail', attrs: { 'data-detail': rawId } })}</div></td>
+  </tr>`;
+}
+
+async function renderCourierHistory(container) {
+  if (courierHistoryUi.detailOrderId) {
+    await renderOrderHistoryDetail(container, courierHistoryUi.detailOrderId, {
+      detailState: courierHistoryUi,
+      backView: 'courier-history',
+      backLabel: 'Kurye geçmişine dön',
+    });
+    return;
+  }
+
+  const params = new URLSearchParams({
+    page: String(courierHistoryUi.page),
+    pageSize: String(courierHistoryUi.pageSize),
   });
-  btn('#c-cash', async () => {
-    if (!id) return;
-    try {
-      await withButtonBusy(container.querySelector('#c-cash'), 'Tamamlanıyor…', async () => {
-        await q('/deliver', { collectionMethod: 'CASH' });
-        showToast('Teslimat tamamlandı.', 'success');
-        await renderCourier(container);
-      });
-    } catch (e) {
-      showToast(errorMessage(e), 'error');
-    }
+
+  /** @type {{ items?: object[], total?: number, page?: number, pageSize?: number } | object[]} */
+  let body;
+  try {
+    body = await api(`/courier/orders/history?${params.toString()}`);
+  } catch (e) {
+    container.innerHTML = `<p class="a-error">${esc(e.message)}</p>`;
+    return;
+  }
+
+  const items = Array.isArray(body) ? body : Array.isArray(body.items) ? body.items : [];
+  const total = Array.isArray(body) ? items.length : Number(body.total) || 0;
+  const page = Array.isArray(body) ? courierHistoryUi.page : Number(body.page) || 0;
+  const pageSize = Array.isArray(body) ? courierHistoryUi.pageSize : Number(body.pageSize) || courierHistoryUi.pageSize;
+  courierHistoryUi.page = page;
+  courierHistoryUi.pageSize = pageSize;
+
+  const fromN = total === 0 ? 0 : page * pageSize + 1;
+  const toN = Math.min(total, page * pageSize + items.length);
+  const hasPrev = page > 0;
+  const hasNext = page * pageSize + items.length < total;
+  const rows = items.map((o) => courierHistoryRowHtml(o)).join('');
+
+  container.innerHTML = `
+    <div class="a-list-page">
+      <h1 class="a-h1">Geçmiş görevler</h1>
+      <p class="a-muted">Tamamlanan veya iptal edilen teslimatların sayfalı listesi.</p>
+      <p class="a-muted">${esc(`${fromN}–${toN} / ${total} kayıt`)}</p>
+      <div class="a-table-wrap">
+        <table class="a-table">
+          <thead><tr><th>ID</th><th>Durum</th><th>Alıcı</th><th>Tarih</th><th></th></tr></thead>
+          <tbody>${rows || emptyRowHtml('Kayıt yok', 5)}</tbody>
+        </table>
+      </div>
+      <div class="a-history-pager">
+        ${buttonHtml({ label: 'Önceki', id: 'courier-hist-prev', variant: 'secondary', icon: 'caret-left', disabled: !hasPrev })}
+        <span class="a-muted">Sayfa ${esc(String(page + 1))}</span>
+        ${buttonHtml({ label: 'Sonraki', id: 'courier-hist-next', variant: 'secondary', icon: 'caret-right', disabled: !hasNext })}
+      </div>
+    </div>`;
+
+  container.querySelector('#courier-hist-prev')?.addEventListener('click', () => {
+    if (courierHistoryUi.page <= 0) return;
+    courierHistoryUi.page -= 1;
+    renderMain().catch(console.error);
+  });
+
+  container.querySelector('#courier-hist-next')?.addEventListener('click', () => {
+    if (!hasNext) return;
+    courierHistoryUi.page += 1;
+    renderMain().catch(console.error);
+  });
+
+  container.querySelectorAll('.a-courier-history-detail').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = /** @type {HTMLButtonElement} */ (btn).dataset.detail;
+      if (!id) return;
+      courierHistoryUi.detailOrderId = id;
+      renderMain().catch(console.error);
+    });
   });
 }
 
@@ -1837,7 +2328,11 @@ async function renderMain() {
       await renderOrderHistory(main);
     }
   } else if (view === 'courier' && isCourier()) await renderCourier(main);
+  else if (view === 'courier-history' && isCourier()) await renderCourierHistory(main);
   else if (view === 'courier' && !isCourier()) {
+    view = 'orders';
+    await renderMain();
+  } else if (view === 'courier-history' && !isCourier()) {
     view = 'orders';
     await renderMain();
   } else if (view === 'shop' && isCashierPlus()) await renderShop(main);
@@ -1860,7 +2355,8 @@ function renderApp(root) {
   if (isCourier()) view = 'courier';
   const r = role();
   const sideNav = isCourier()
-    ? `${navButton('Görevler', 'courier')}`
+    ? `${navButton('Görevler', 'courier')}
+       ${navButton('Geçmiş', 'courier-history')}`
     : `${navButton('Siparişler', 'orders')}
        ${navButton('Geçmiş', 'history')}
        ${isCashierPlus() ? navButton('Mağaza', 'shop') : ''}
@@ -1868,29 +2364,65 @@ function renderApp(root) {
 
   root.innerHTML = `
     <div class="a-layout">
-      <aside class="a-side">
+      <aside class="a-side" id="a-side" aria-label="Authority menüsü">
         <div class="a-brand"><span class="a-brand-logo" aria-hidden="true"></span>DAINO</div>
         <p class="a-muted a-role-note">${esc(roleLabelTr(r))}</p>
         ${sideNav}
-        <button type="button" class="a-nav-btn a-logout" id="a-logout"><i class="ph ph-sign-out" aria-hidden="true"></i><span>Çıkış</span></button>
+        <button type="button" class="a-nav-btn a-logout" data-logout><i class="ph ph-sign-out" aria-hidden="true"></i><span>Çıkış</span></button>
       </aside>
-      <div>
+      <button type="button" class="a-side-scrim" id="a-side-scrim" aria-label="Menüyü kapat"></button>
+      <div class="a-content-shell">
         <div class="a-mnav" id="a-mnav"></div>
         <div class="a-main" id="a-main"></div>
       </div>
     </div>`;
 
-  const mnav = root.querySelector('#a-mnav');
-  mnav.innerHTML = sideNav;
-  root.querySelectorAll('[data-view]').forEach((b) => {
-    b.onclick = () => applyView(b.dataset.view);
+  const layout = root.querySelector('.a-layout');
+  const menuToggle = buttonHtml({
+    label: 'Menü',
+    variant: 'secondary',
+    icon: 'list',
+    classes: 'a-mnav__toggle',
+    attrs: {
+      id: 'a-side-toggle',
+      'aria-controls': 'a-side',
+      'aria-expanded': 'false',
+    },
   });
-  root.querySelector('#a-logout').onclick = () => {
+  const mobileLogout = buttonHtml({
+    label: 'Çıkış',
+    variant: 'secondary',
+    icon: 'sign-out',
+    classes: 'a-mnav__logout',
+    attrs: { 'data-logout': true },
+  });
+  const mnav = root.querySelector('#a-mnav');
+  mnav.innerHTML = `${menuToggle}${mobileLogout}`;
+  const sideToggle = root.querySelector('#a-side-toggle');
+  const setSideOpen = (open) => {
+    layout.classList.toggle('a-layout--side-open', open);
+    sideToggle?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+  sideToggle?.addEventListener('click', () => setSideOpen(!layout.classList.contains('a-layout--side-open')));
+  root.querySelector('#a-side-scrim')?.addEventListener('click', () => setSideOpen(false));
+  root.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') setSideOpen(false);
+  });
+  root.querySelectorAll('[data-view]').forEach((b) => {
+    b.onclick = () => {
+      setSideOpen(false);
+      applyView(b.dataset.view);
+    };
+  });
+  const logout = () => {
     setToken(null);
     screen = 'login';
     stopOrdersRealtime();
     render();
   };
+  root.querySelectorAll('[data-logout]').forEach((b) => {
+    b.addEventListener('click', logout);
+  });
 
   renderMain()
     .then(() => {
@@ -1898,7 +2430,7 @@ function renderApp(root) {
         onOrdersPush: async () => {
           if (
             screen === 'app' &&
-            (view === 'orders' || view === 'history' || view === 'courier')
+            (view === 'orders' || view === 'history' || view === 'courier' || view === 'courier-history')
           ) {
             try {
               notifyInterestingStaffOrderChanges(await fetchOrdersStaff());

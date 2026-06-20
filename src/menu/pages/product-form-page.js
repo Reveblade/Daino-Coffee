@@ -1,5 +1,11 @@
 import { api, uploadAdminImage } from '../../api.js';
 import { idStr, catPath, parseTryToKurus, pickImageFile } from '../helpers.js';
+import {
+  PRODUCT_DESCRIPTION_MAX_LENGTH,
+  PRODUCT_NAME_MAX_LENGTH,
+  PRODUCT_PRICE_MAX_KURUS,
+  formatKurusLimit,
+} from '../limits.js';
 import { mountProductOptionGroupsForm } from '../product-option-groups.js';
 
 /**
@@ -92,16 +98,16 @@ export async function renderProductFormPage(container, ctx) {
         <label class="a-field-label">Kategori</label>
         <select class="a-select a-pf-cat" id="pf-cat">${catOpts}</select>
 
-        <label class="a-field-label">Ürün adı</label>
-        <input class="a-input" id="pf-name" maxlength="120" value="${esc(name)}" placeholder="Örn. Filtre kahve" />
+        <label class="a-field-label">Ürün adı <span class="a-muted">(en fazla ${PRODUCT_NAME_MAX_LENGTH} karakter)</span></label>
+        <input class="a-input" id="pf-name" maxlength="${PRODUCT_NAME_MAX_LENGTH}" value="${esc(name)}" placeholder="Örn. Filtre kahve" />
 
-        <label class="a-field-label">Açıklama <span class="a-muted">(opsiyonel)</span></label>
-        <textarea class="a-input" id="pf-desc" rows="4" placeholder="Müşteri menüsünde görünen kısa açıklama">${esc(desc)}</textarea>
+        <label class="a-field-label">Açıklama <span class="a-muted">(opsiyonel, en fazla ${PRODUCT_DESCRIPTION_MAX_LENGTH} karakter)</span></label>
+        <textarea class="a-input" id="pf-desc" rows="4" maxlength="${PRODUCT_DESCRIPTION_MAX_LENGTH}" placeholder="Müşteri menüsünde görünen kısa açıklama">${esc(desc)}</textarea>
 
         <div class="a-form-row">
           <div class="a-form-row__item">
-            <label class="a-field-label">Fiyat (₺)</label>
-            <input class="a-input" id="pf-price" placeholder="45,50" value="${esc(priceTry)}" />
+            <label class="a-field-label">Fiyat (₺) <span class="a-muted">(en fazla ${formatKurusLimit(PRODUCT_PRICE_MAX_KURUS)} ₺)</span></label>
+            <input class="a-input" id="pf-price" inputmode="decimal" maxlength="9" placeholder="45,50" value="${esc(priceTry)}" />
           </div>
           <div class="a-form-row__item">
             <label class="a-field-label">Liste sırası</label>
@@ -212,8 +218,23 @@ export async function renderProductFormPage(container, ctx) {
       /** @type {HTMLElement | null} */ (container.querySelector('#pf-name'))?.focus();
       return;
     }
+    if (nameVal.length > PRODUCT_NAME_MAX_LENGTH) {
+      errEl.textContent = `Ürün adı en fazla ${PRODUCT_NAME_MAX_LENGTH} karakter olabilir.`;
+      /** @type {HTMLElement | null} */ (container.querySelector('#pf-name'))?.focus();
+      return;
+    }
+    if (description && description.length > PRODUCT_DESCRIPTION_MAX_LENGTH) {
+      errEl.textContent = `Açıklama en fazla ${PRODUCT_DESCRIPTION_MAX_LENGTH} karakter olabilir.`;
+      /** @type {HTMLElement | null} */ (container.querySelector('#pf-desc'))?.focus();
+      return;
+    }
     if (kurus === null) {
       errEl.textContent = 'Geçerli bir fiyat girin.';
+      /** @type {HTMLElement | null} */ (container.querySelector('#pf-price'))?.focus();
+      return;
+    }
+    if (kurus > PRODUCT_PRICE_MAX_KURUS) {
+      errEl.textContent = `Fiyat ${formatKurusLimit(PRODUCT_PRICE_MAX_KURUS)} ₺ değerini aşamaz.`;
       /** @type {HTMLElement | null} */ (container.querySelector('#pf-price'))?.focus();
       return;
     }

@@ -1,4 +1,10 @@
 import { randomProductOptionGroupId, slugProductChoiceId, parseTryToKurus } from './helpers.js';
+import {
+  PRODUCT_OPTION_CHOICE_LABEL_MAX_LENGTH,
+  PRODUCT_OPTION_EXTRA_PRICE_MAX_KURUS,
+  PRODUCT_OPTION_GROUP_LABEL_MAX_LENGTH,
+  formatKurusLimit,
+} from './limits.js';
 
 /**
  * @param {any[]} groups
@@ -24,12 +30,15 @@ function renderChoiceRows(wrap, choices) {
     labInp.type = 'text';
     labInp.className = 'a-input a-pog-clabel';
     labInp.placeholder = `Seçenek ${idx + 1}`;
+    labInp.maxLength = PRODUCT_OPTION_CHOICE_LABEL_MAX_LENGTH;
     labInp.value = ch.label ?? '';
     const priceInp = document.createElement('input');
     priceInp.type = 'text';
+    priceInp.inputMode = 'decimal';
+    priceInp.maxLength = 8;
     priceInp.className = 'a-input a-pog-cprice';
     priceInp.placeholder = '0';
-    priceInp.title = 'Ek fiyat (₺), boş = 0';
+    priceInp.title = `Ek fiyat (₺), boş = 0, en fazla ${formatKurusLimit(PRODUCT_OPTION_EXTRA_PRICE_MAX_KURUS)} ₺`;
     const ex = Number(ch.extraPriceKurus) || 0;
     priceInp.value =
       ex > 0
@@ -116,6 +125,7 @@ export function mountProductOptionGroupsForm(panel, initialGroups, productNameHi
       inpLabel.type = 'text';
       inpLabel.className = 'a-input a-pog-label';
       inpLabel.placeholder = 'Grup başlığı (örn. Ekstralar, Süt)';
+      inpLabel.maxLength = PRODUCT_OPTION_GROUP_LABEL_MAX_LENGTH;
       inpLabel.value = g.label ?? '';
       inpLabel.classList.add('a-pog-group-name');
       const selKind = document.createElement('select');
@@ -156,11 +166,14 @@ export function mountProductOptionGroupsForm(panel, initialGroups, productNameHi
         labInp.type = 'text';
         labInp.className = 'a-input a-pog-clabel';
         labInp.placeholder = 'Yeni seçenek';
+        labInp.maxLength = PRODUCT_OPTION_CHOICE_LABEL_MAX_LENGTH;
         const priceInp = document.createElement('input');
         priceInp.type = 'text';
+        priceInp.inputMode = 'decimal';
+        priceInp.maxLength = 8;
         priceInp.className = 'a-input a-pog-cprice';
         priceInp.placeholder = '0';
-        priceInp.title = 'Ek fiyat (₺)';
+        priceInp.title = `Ek fiyat (₺), en fazla ${formatKurusLimit(PRODUCT_OPTION_EXTRA_PRICE_MAX_KURUS)} ₺`;
         const rmC = document.createElement('button');
         rmC.type = 'button';
         rmC.className = 'a-btn a-btn--danger a-btn--compact a-pog-rm-choice';
@@ -233,6 +246,12 @@ export function mountProductOptionGroupsForm(panel, initialGroups, productNameHi
         if (!label) {
           return { ok: false, message: 'Grup başlığı boş olamaz.' };
         }
+        if (label.length > PRODUCT_OPTION_GROUP_LABEL_MAX_LENGTH) {
+          return {
+            ok: false,
+            message: `Grup başlığı en fazla ${PRODUCT_OPTION_GROUP_LABEL_MAX_LENGTH} karakter olabilir.`,
+          };
+        }
         if (!nonEmpty.length) {
           return {
             ok: false,
@@ -244,6 +263,12 @@ export function mountProductOptionGroupsForm(panel, initialGroups, productNameHi
         for (let i = 0; i < nonEmpty.length; i++) {
           const r = nonEmpty[i];
           const lab = String(r.label || '').trim();
+          if (lab.length > PRODUCT_OPTION_CHOICE_LABEL_MAX_LENGTH) {
+            return {
+              ok: false,
+              message: `"${label}" içindeki seçenek adı en fazla ${PRODUCT_OPTION_CHOICE_LABEL_MAX_LENGTH} karakter olabilir.`,
+            };
+          }
           const rawP = String(r._priceRaw ?? '').trim();
           let extraPriceKurus = 0;
           if (rawP) {
@@ -255,6 +280,12 @@ export function mountProductOptionGroupsForm(panel, initialGroups, productNameHi
               };
             }
             extraPriceKurus = p;
+          }
+          if (extraPriceKurus > PRODUCT_OPTION_EXTRA_PRICE_MAX_KURUS) {
+            return {
+              ok: false,
+              message: `"${label}" / "${lab}" ek fiyatı ${formatKurusLimit(PRODUCT_OPTION_EXTRA_PRICE_MAX_KURUS)} ₺ değerini aşamaz.`,
+            };
           }
           let cid = String(r.id || '').trim();
           if (!cid || usedIds.has(cid)) {
