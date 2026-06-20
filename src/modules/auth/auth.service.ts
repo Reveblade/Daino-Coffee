@@ -94,6 +94,7 @@ export class AuthService {
     } else {
       // staff must pre-exist
     }
+    this.usersService.assertUserActive(user);
 
     return this.issueTokenPair(
       user._id.toString(),
@@ -118,6 +119,7 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
+    this.usersService.assertUserActive(user);
     return this.issueTokenPair(
       user._id.toString(),
       UserRole.ADMIN_OWNER,
@@ -144,6 +146,7 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+    this.usersService.assertUserActive(user);
     return this.issueTokenPair(
       user._id.toString(),
       user.role,

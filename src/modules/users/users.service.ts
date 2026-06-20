@@ -24,6 +24,10 @@ const DELIVERY_AREA_MESSAGE =
   'Web siparişi için teslimat adresi Akhisar içinde olmalıdır.';
 const BUSY_COURIER_STATUSES = ['ASSIGNED', 'OUT_FOR_DELIVERY'] as const;
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function normalizeDeliveryText(value?: string): string {
   return (value ?? '')
     .normalize('NFD')
@@ -97,11 +101,18 @@ export class UsersService {
   }
 
   assertCustomerAccountComplete(user: UserDocument): void {
+    this.assertUserActive(user);
     this.assertCustomerProfileComplete(user);
     if (!this.isCustomerAddressComplete(user)) {
       throw new ForbiddenException(
         'Bu işlem için önce hesabınıza Akhisar içinde en az bir teslimat adresi ekleyin.',
       );
+    }
+  }
+
+  assertUserActive(user: UserDocument): void {
+    if (user.isActive === false) {
+      throw new ForbiddenException('Hesap engellenmiş.');
     }
   }
 
@@ -281,6 +292,58 @@ export class UsersService {
         .exec(),
     ]);
     return { items, total, page, pageSize };
+  }
+
+  async listCustomers(opts?: {
+    page?: number;
+    pageSize?: number;
+    q?: string;
+  }): Promise<UserDocument[] | StaffAdminPage<UserDocument>> {
+    const q = opts?.q?.trim();
+    const filter: Record<string, unknown> = { role: UserRole.CUSTOMER };
+    if (q) {
+      const re = new RegExp(escapeRegExp(q), 'i');
+      filter.$or = [
+        { phoneE164: re },
+        { firstName: re },
+        { lastName: re },
+      ];
+    }
+    const sort = { createdAt: -1 as const };
+    const usePaging =
+      opts != null &&
+      Number.isFinite(opts.page) &&
+      Number.isFinite(opts.pageSize) &&
+      opts.page! >= 0 &&
+      opts.pageSize! >= 1;
+    if (!usePaging) {
+      return this.userModel.find(filter).sort(sort).exec();
+    }
+    const page = Math.floor(Math.max(0, opts!.page!));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(opts!.pageSize!)));
+    const [total, items] = await Promise.all([
+      this.userModel.countDocuments(filter).exec(),
+      this.userModel
+        .find(filter)
+        .sort(sort)
+        .skip(page * pageSize)
+        .limit(pageSize)
+        .exec(),
+    ]);
+    return { items, total, page, pageSize };
+  }
+
+  async setCustomerActive(id: string, isActive: boolean): Promise<UserDocument> {
+    const user = await this.userModel.findById(id).exec();
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.role !== UserRole.CUSTOMER) {
+      throw new ConflictException('Not a customer user');
+    }
+    user.isActive = isActive;
+    await user.save();
+    return user;
   }
 
   async listActiveCouriers(): Promise<UserDocument[]> {

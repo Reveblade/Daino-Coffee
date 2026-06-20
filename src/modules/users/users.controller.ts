@@ -25,6 +25,7 @@ import { UserRole } from './schemas/user.schema';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 import {
   IsIn,
+  IsBoolean,
   IsNumber,
   IsOptional,
   IsString,
@@ -136,6 +137,11 @@ class UpdateStaffDto {
   lastName?: string;
 }
 
+class UpdateCustomerStatusDto {
+  @IsBoolean()
+  isActive: boolean;
+}
+
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 export class UsersController {
@@ -244,6 +250,27 @@ export class AdminController {
     return this.users.listStaff();
   }
 
+  @Get('customers')
+  @Roles(UserRole.ADMIN_OWNER, UserRole.ADMIN)
+  listCustomers(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('q') q?: string,
+  ) {
+    const p =
+      page !== undefined && page !== '' ? parseInt(page, 10) : Number.NaN;
+    const ps =
+      pageSize !== undefined && pageSize !== ''
+        ? parseInt(pageSize, 10)
+        : Number.NaN;
+    const usePaging =
+      Number.isFinite(p) && Number.isFinite(ps) && p >= 0 && ps >= 1;
+    if (usePaging) {
+      return this.users.listCustomers({ page: p, pageSize: ps, q });
+    }
+    return this.users.listCustomers({ q });
+  }
+
   @Get('couriers')
   @Roles(UserRole.ADMIN_OWNER, UserRole.ADMIN, UserRole.CASHIER)
   listCouriers() {
@@ -288,5 +315,14 @@ export class AdminController {
   async deleteStaff(@CurrentUser() actor: JwtPayload, @Param('id') id: string) {
     await this.users.deleteStaffIfAllowed(id, actor);
     return { ok: true };
+  }
+
+  @Patch('customers/:id/status')
+  @Roles(UserRole.ADMIN_OWNER, UserRole.ADMIN)
+  updateCustomerStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateCustomerStatusDto,
+  ) {
+    return this.users.setCustomerActive(id, dto.isActive);
   }
 }
