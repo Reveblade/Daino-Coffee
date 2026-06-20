@@ -735,22 +735,80 @@ body {
   gap: 10px;
 }
 
-.a-courier-destination p {
+.a-courier-destination p,
+.a-courier-address-block {
   display: grid;
   gap: 3px;
   margin: 0;
 }
 
-.a-courier-destination strong {
+.a-courier-destination strong,
+.a-courier-address-block strong {
   color: var(--muted);
   font-size: 0.74rem;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
-.a-courier-destination span {
+.a-courier-destination span,
+.a-courier-address-block > span {
   font-weight: 700;
   line-height: 1.35;
+}
+
+.a-courier-map-link {
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  white-space: nowrap;
+  border-bottom: 1px solid rgba(215, 178, 125, 0.36);
+}
+
+.a-courier-map-link:hover {
+  border-bottom-color: rgba(215, 178, 125, 0.72);
+}
+
+.a-courier-map-link-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 3px;
+}
+
+.a-courier-map-preview {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 180px;
+  margin-top: 2px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 28% 20%, rgba(215, 178, 125, 0.22), transparent 34%),
+    linear-gradient(145deg, rgba(246, 241, 232, 0.1), rgba(18, 16, 13, 0.18));
+}
+
+.a-courier-map-preview iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.a-courier-map-preview--empty {
+  gap: 8px;
+  color: var(--muted);
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.a-courier-map-preview--empty .a-btn__icon {
+  width: 1.5em;
+  height: 1.5em;
+  color: var(--accent);
 }
 
 .a-row {
@@ -1363,6 +1421,41 @@ body {
   flex-wrap: wrap;
   gap: 10px;
   justify-content: flex-end;
+}
+
+.a-courier-deliver-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(246, 241, 232, 0.06);
+}
+
+.a-courier-deliver-total span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.a-courier-deliver-total strong {
+  font-size: 1.1rem;
+}
+
+.a-courier-deliver-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.a-courier-deliver-options .a-btn {
+  min-height: 54px;
 }
 
 .a-toast-host {

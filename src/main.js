@@ -17,6 +17,7 @@ import {
   emptyRowHtml,
   errorMessage,
   escapeHtml as esc,
+  iconHtml,
   showConfirmDialog,
   showToast,
   withButtonBusy,
@@ -1746,6 +1747,42 @@ function courierPhoneActionHtml(o) {
 }
 
 /** @param {object} o */
+function courierAddressMapQuery(o) {
+  const addr = o?.deliveryAddress;
+  if (!addr || typeof addr !== 'object') return '';
+  const lat = Number(addr.lat);
+  const lng = Number(addr.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) return `${lat},${lng}`;
+  return [addr.formattedAddress, addr.line1, addr.line2, addr.district, addr.city, addr.country]
+    .map((x) => String(x ?? '').trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+/** @param {object} o */
+function courierAddressMapUrl(o) {
+  const query = courierAddressMapQuery(o);
+  return query ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}` : '';
+}
+
+/** @param {object} o */
+function courierMapInlineLinkHtml(o) {
+  const href = courierAddressMapUrl(o);
+  if (!href) return '';
+  return `<a class="a-courier-map-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">GOOGLE MAPS'TE AÇ</a>`;
+}
+
+/** @param {object} o */
+function courierMapPreviewHtml(o) {
+  const query = courierAddressMapQuery(o);
+  if (!query) {
+    return `<div class="a-courier-map-preview a-courier-map-preview--empty" role="status">${iconHtml('map-pin')}<span>Konum bulunamadı</span></div>`;
+  }
+  const src = `https://www.google.com/maps?q=${encodeURIComponent(query)}&output=embed`;
+  return `<div class="a-courier-map-preview"><iframe title="Teslimat adresi harita önizlemesi" src="${esc(src)}" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe></div>`;
+}
+
+/** @param {object} o */
 function courierAddressLine(o) {
   const addr = o?.deliveryAddress;
   if (!addr || typeof addr !== 'object') return 'Teslimat adresi yok';
@@ -1769,6 +1806,9 @@ function courierTaskHtml(o) {
   const itemsHtml = liveOrderItemsHtml(o);
   const recipient = esc(courierRecipientLine(o));
   const address = esc(courierAddressLine(o));
+  const mapPreview = courierMapPreviewHtml(o);
+  const mapLink = courierMapInlineLinkHtml(o);
+  const mapLinkRow = mapLink ? `<div class="a-courier-map-link-row">${mapLink}</div>` : '';
   const phoneAction = courierPhoneActionHtml(o);
   const total = esc(formatTryFromKurus(o?.totalKurus));
   const createdAt = esc(formatDateTimeTr(o?.createdAt));
@@ -1792,12 +1832,16 @@ function courierTaskHtml(o) {
           <div class="a-courier-step__panel">
             <div class="a-courier-destination">
               <p><strong>Alıcı</strong><span>${recipient}</span></p>
-              <p><strong>Adres</strong><span>${address}</span></p>
+              <div class="a-courier-address-block">
+                <strong>Adres</strong>
+                <span>${address}</span>
+                ${mapLinkRow}
+                ${mapPreview}
+              </div>
             </div>
             <div class="a-courier-step__actions">
               ${phoneAction}
-              ${buttonHtml({ label: 'Teslim ettim · POS', id: 'c-pos', variant: 'secondary', icon: 'credit-card' })}
-              ${buttonHtml({ label: 'Teslim ettim · Nakit', id: 'c-cash', variant: 'secondary', icon: 'money' })}
+              ${buttonHtml({ label: 'Teslim ettim', id: 'c-deliver', variant: 'secondary', icon: 'check-circle' })}
             </div>
           </div>
         </section>`
@@ -1818,6 +1862,72 @@ function courierTaskHtml(o) {
     </div>
     ${stateHtml}
   </article>`;
+}
+
+/** @param {string} total */
+function showCourierDeliverDialog(total) {
+  return new Promise((resolve) => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const overlay = document.createElement('div');
+    overlay.className = 'a-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-labelledby', 'a-courier-deliver-title');
+    overlay.innerHTML = `
+      <div class="a-dialog">
+        <h2 class="a-dialog-title" id="a-courier-deliver-title">Teslimatı tamamla</h2>
+        <p class="a-dialog-msg">Tahsilat yöntemini seçin.</p>
+        <div class="a-courier-deliver-total">
+          <span>Toplam</span>
+          <strong>${esc(total)}</strong>
+        </div>
+        <div class="a-courier-deliver-options">
+          ${buttonHtml({ label: 'POS', variant: 'secondary', icon: 'credit-card', attrs: { 'data-method': 'POS' } })}
+          ${buttonHtml({ label: 'Nakit', variant: 'secondary', icon: 'money', attrs: { 'data-method': 'CASH' } })}
+        </div>
+        <div class="a-dialog-actions">
+          ${buttonHtml({ label: 'Vazgeç', variant: 'secondary', attrs: { 'data-act': 'cancel' } })}
+        </div>
+      </div>`;
+
+    const finish = (value) => {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      previousFocus?.focus();
+      resolve(value);
+    };
+
+    function onKey(e) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        finish(null);
+      }
+      if (e.key === 'Tab') {
+        const focusable = [...overlay.querySelectorAll('button')];
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    }
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) finish(null);
+    });
+    overlay.querySelector('[data-act="cancel"]')?.addEventListener('click', () => finish(null));
+    overlay.querySelectorAll('[data-method]').forEach((btn) => {
+      btn.addEventListener('click', () => finish(/** @type {HTMLButtonElement} */ (btn).dataset.method ?? null));
+    });
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => /** @type {HTMLElement | null} */ (overlay.querySelector('[data-method]'))?.focus());
+  });
 }
 
 async function renderCourier(container) {
@@ -1854,16 +1964,12 @@ async function renderCourier(container) {
     }
   });
 
-  const deliver = async (buttonSelector, collectionMethod, label) => {
+  const deliver = async () => {
     if (!id) return;
-    const ok = await showConfirmDialog({
-      title: 'Teslimatı onayla',
-      message: `${label} olarak teslim ettim diyorsun. Emin misin?`,
-      confirmLabel: 'Evet, teslim ettim',
-    });
-    if (!ok) return;
+    const collectionMethod = await showCourierDeliverDialog(formatTryFromKurus(cur?.totalKurus));
+    if (!collectionMethod) return;
     try {
-      await withButtonBusy(container.querySelector(buttonSelector), 'Tamamlanıyor…', async () => {
+      await withButtonBusy(container.querySelector('#c-deliver'), 'Tamamlanıyor…', async () => {
         await q('/deliver', { collectionMethod });
         showToast('Teslimat tamamlandı.', 'success');
         await renderCourier(container);
@@ -1873,20 +1979,17 @@ async function renderCourier(container) {
     }
   };
 
-  container.querySelector('#c-pos')?.addEventListener('click', () => deliver('#c-pos', 'POS', 'POS'));
-  container.querySelector('#c-cash')?.addEventListener('click', () => deliver('#c-cash', 'CASH', 'nakit'));
+  container.querySelector('#c-deliver')?.addEventListener('click', deliver);
 }
 
 /** @param {object} o */
 function courierHistoryRowHtml(o) {
   const rawId = idStr(o);
   const shortId = rawId.length >= 8 ? rawId.slice(-8) : rawId;
-  const status = onlineStatusTr(o?.status);
   const updatedAt = formatDateTimeTr(o?.updatedAt);
   const recipient = courierRecipientLine(o);
   return `<tr>
     <td><code>${esc(shortId)}</code></td>
-    <td>${esc(status)}</td>
     <td>${esc(recipient)}</td>
     <td class="a-muted">${esc(updatedAt)}</td>
     <td><div class="a-table-actions">${buttonHtml({ label: 'İncele', variant: 'secondary', size: 'compact', icon: 'info', classes: 'a-courier-history-detail', attrs: { 'data-detail': rawId } })}</div></td>
@@ -1937,8 +2040,8 @@ async function renderCourierHistory(container) {
       <p class="a-muted">${esc(`${fromN}–${toN} / ${total} kayıt`)}</p>
       <div class="a-table-wrap">
         <table class="a-table">
-          <thead><tr><th>ID</th><th>Durum</th><th>Alıcı</th><th>Tarih</th><th></th></tr></thead>
-          <tbody>${rows || emptyRowHtml('Kayıt yok', 5)}</tbody>
+          <thead><tr><th>ID</th><th>Alıcı</th><th>Tarih</th><th></th></tr></thead>
+          <tbody>${rows || emptyRowHtml('Kayıt yok', 4)}</tbody>
         </table>
       </div>
       <div class="a-history-pager">
