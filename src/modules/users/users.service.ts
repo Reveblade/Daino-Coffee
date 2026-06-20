@@ -8,7 +8,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcrypt';
-import { User, UserDocument, UserRole } from './schemas/user.schema';
+import { User, UserAddress, UserDocument, UserRole } from './schemas/user.schema';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 
 export interface StaffAdminPage<T> {
@@ -16,6 +16,18 @@ export interface StaffAdminPage<T> {
   total: number;
   page: number;
   pageSize: number;
+}
+
+const DELIVERY_DISTRICT = 'akhisar';
+const DELIVERY_AREA_MESSAGE =
+  'Web siparişi için teslimat adresi Akhisar içinde olmalıdır.';
+
+function normalizeDeliveryText(value?: string): string {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
 }
 
 @Injectable()
@@ -51,7 +63,16 @@ export class UsersService {
       (address) =>
         address.label?.trim().length >= 2 &&
         address.line1?.trim().length >= 5 &&
-        address.city?.trim().length >= 2,
+        address.city?.trim().length >= 2 &&
+        this.isDeliveryAddressSupported(address),
+    );
+  }
+
+  isDeliveryAddressSupported(
+    address: Pick<UserAddress, 'city' | 'district' | 'formattedAddress'>,
+  ): boolean {
+    return [address.district, address.city, address.formattedAddress].some(
+      (part) => normalizeDeliveryText(part).includes(DELIVERY_DISTRICT),
     );
   }
 
@@ -74,7 +95,7 @@ export class UsersService {
     this.assertCustomerProfileComplete(user);
     if (!this.isCustomerAddressComplete(user)) {
       throw new ForbiddenException(
-        'Bu işlem için önce hesabınıza en az bir teslimat adresi ekleyin.',
+        'Bu işlem için önce hesabınıza Akhisar içinde en az bir teslimat adresi ekleyin.',
       );
     }
   }
@@ -322,6 +343,9 @@ export class UsersService {
       throw new BadRequestException(
         'Adres adı, adres satırı ve şehir alanlarını eksiksiz girin.',
       );
+    }
+    if (!this.isDeliveryAddressSupported({ city, district, formattedAddress })) {
+      throw new BadRequestException(DELIVERY_AREA_MESSAGE);
     }
     if (
       (body.lat !== undefined && body.lng === undefined) ||

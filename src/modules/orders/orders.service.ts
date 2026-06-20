@@ -503,6 +503,11 @@ export class OrdersService {
     if (!addr) {
       throw new BadRequestException('Invalid address index')
     }
+    if (!this.usersService.isDeliveryAddressSupported(addr)) {
+      throw new BadRequestException(
+        'Web siparişi için teslimat adresi Akhisar içinde olmalıdır.',
+      )
+    }
     const { lineItems, total } = await this.buildLineItems(body.items)
     const order = await this.orderModel.create({
       channel: OrderChannel.ONLINE,
