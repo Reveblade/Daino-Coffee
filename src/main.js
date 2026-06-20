@@ -52,6 +52,16 @@ let courierHistoryUi = {
   pageSize: 10,
 };
 
+let staffUi = {
+  page: 0,
+  pageSize: 20,
+};
+
+let tablesUi = {
+  page: 0,
+  pageSize: 20,
+};
+
 function defaultMenuListUi() {
   return {
     section: 'categories',
@@ -88,6 +98,34 @@ function roleLabelTr(r) {
     ADMIN_OWNER: 'Sahip',
   };
   return m[r] ?? String(r ?? '');
+}
+
+/**
+ * @param {unknown} body
+ * @param {number} fallbackPageSize
+ */
+function parsePaged(body, fallbackPageSize) {
+  if (Array.isArray(body)) {
+    return {
+      items: body,
+      total: body.length,
+      page: 0,
+      pageSize: fallbackPageSize,
+    };
+  }
+  const o = /** @type {{ items?: unknown[]; total?: unknown; page?: unknown; pageSize?: unknown }} */ (
+    body && typeof body === 'object' ? body : {}
+  );
+  const items = Array.isArray(o.items) ? o.items : [];
+  return {
+    items,
+    total: Number(o.total) || 0,
+    page: typeof o.page === 'number' && Number.isFinite(o.page) ? o.page : 0,
+    pageSize:
+      typeof o.pageSize === 'number' && Number.isFinite(o.pageSize)
+        ? o.pageSize
+        : fallbackPageSize,
+  };
 }
 
 function inPlaceStatusTr(st) {
@@ -1966,13 +2004,30 @@ async function renderShop(container) {
 }
 
 async function renderStaff(container) {
-  let list = [];
+  const params = new URLSearchParams({
+    page: String(staffUi.page),
+    pageSize: String(staffUi.pageSize),
+  });
+  let paged;
   try {
-    list = await api('/admin/staff');
+    paged = parsePaged(await api(`/admin/staff?${params.toString()}`), staffUi.pageSize);
   } catch (e) {
     container.innerHTML = `<p class="a-error">${esc(e.message)}</p>`;
     return;
   }
+  staffUi.page = paged.page;
+  staffUi.pageSize = paged.pageSize;
+  const maxPage =
+    paged.total === 0 ? 0 : Math.max(0, Math.ceil(paged.total / staffUi.pageSize) - 1);
+  if (staffUi.page > maxPage && maxPage >= 0) {
+    staffUi.page = maxPage;
+    return renderStaff(container);
+  }
+  const list = paged.items;
+  const staffFrom = paged.total === 0 ? 0 : staffUi.page * staffUi.pageSize + 1;
+  const staffTo = Math.min(paged.total, staffUi.page * staffUi.pageSize + list.length);
+  const staffHasPrev = staffUi.page > 0;
+  const staffHasNext = staffUi.page * staffUi.pageSize + list.length < paged.total;
   container.innerHTML = `
     <h1 class="a-h1">Personel</h1>
     <div class="a-card a-staff-form">
@@ -1990,6 +2045,7 @@ async function renderStaff(container) {
       </select>
       ${buttonHtml({ label: 'Ekle', id: 'st-add', icon: 'user-plus', classes: 'a-staff-add' })}
     </div>
+    <p class="a-muted">${esc(`${staffFrom}–${staffTo} / ${paged.total} kayıt`)}</p>
     <div class="a-table-wrap a-staff-table"><table class="a-table">
       <thead><tr><th>Ad Soyad</th><th>Telefon</th><th>Rol</th><th></th></tr></thead>
       <tbody id="st-tbody">
@@ -2022,7 +2078,12 @@ async function renderStaff(container) {
           })
           .join('') : emptyRowHtml('Personel kaydı yok', 4)}
       </tbody>
-    </table></div>`;
+    </table></div>
+    <div class="a-history-pager">
+      ${buttonHtml({ label: 'Önceki', id: 'st-prev', variant: 'secondary', icon: 'caret-left', disabled: !staffHasPrev })}
+      <span class="a-muted">Sayfa ${esc(String(staffUi.page + 1))}</span>
+      ${buttonHtml({ label: 'Sonraki', id: 'st-next', variant: 'secondary', icon: 'caret-right', disabled: !staffHasNext })}
+    </div>`;
 
   const tbody = container.querySelector('#st-tbody');
   tbody.addEventListener('click', async (e) => {
@@ -2090,6 +2151,16 @@ async function renderStaff(container) {
       }
     });
   };
+  container.querySelector('#st-prev')?.addEventListener('click', () => {
+    if (staffUi.page <= 0) return;
+    staffUi.page -= 1;
+    renderStaff(container).catch(console.error);
+  });
+  container.querySelector('#st-next')?.addEventListener('click', () => {
+    if (!staffHasNext) return;
+    staffUi.page += 1;
+    renderStaff(container).catch(console.error);
+  });
   container.querySelectorAll('.a-del').forEach((b) => {
     b.onclick = async () => {
       const ok = await showConfirmDialog({
@@ -2113,13 +2184,30 @@ async function renderStaff(container) {
 }
 
 async function renderTables(container) {
-  let list = [];
+  const params = new URLSearchParams({
+    page: String(tablesUi.page),
+    pageSize: String(tablesUi.pageSize),
+  });
+  let paged;
   try {
-    list = await api('/admin/tables');
+    paged = parsePaged(await api(`/admin/tables?${params.toString()}`), tablesUi.pageSize);
   } catch (e) {
     container.innerHTML = `<p class="a-error">${esc(e.message)}</p>`;
     return;
   }
+  tablesUi.page = paged.page;
+  tablesUi.pageSize = paged.pageSize;
+  const maxPage =
+    paged.total === 0 ? 0 : Math.max(0, Math.ceil(paged.total / tablesUi.pageSize) - 1);
+  if (tablesUi.page > maxPage && maxPage >= 0) {
+    tablesUi.page = maxPage;
+    return renderTables(container);
+  }
+  const list = paged.items;
+  const tablesFrom = paged.total === 0 ? 0 : tablesUi.page * tablesUi.pageSize + 1;
+  const tablesTo = Math.min(paged.total, tablesUi.page * tablesUi.pageSize + list.length);
+  const tablesHasPrev = tablesUi.page > 0;
+  const tablesHasNext = tablesUi.page * tablesUi.pageSize + list.length < paged.total;
   container.innerHTML = `
     <h1 class="a-h1">Masalar</h1>
     <div class="a-card a-form-stack">
@@ -2130,6 +2218,7 @@ async function renderTables(container) {
         ${buttonHtml({ label: 'Oluştur', id: 'tb-add', icon: 'plus-circle' })}
       </div>
     </div>
+    <p class="a-muted">${esc(`${tablesFrom}–${tablesTo} / ${paged.total} kayıt`)}</p>
     <div class="a-table-wrap"><table class="a-table">
       <thead><tr><th>No</th><th>Slug</th><th>URL</th><th>QR</th><th></th></tr></thead>
       <tbody>
@@ -2150,7 +2239,12 @@ async function renderTables(container) {
           )
           .join('') : emptyRowHtml('Masa kaydı yok', 5)}
       </tbody>
-    </table></div>`;
+    </table></div>
+    <div class="a-history-pager">
+      ${buttonHtml({ label: 'Önceki', id: 'tb-prev', variant: 'secondary', icon: 'caret-left', disabled: !tablesHasPrev })}
+      <span class="a-muted">Sayfa ${esc(String(tablesUi.page + 1))}</span>
+      ${buttonHtml({ label: 'Sonraki', id: 'tb-next', variant: 'secondary', icon: 'caret-right', disabled: !tablesHasNext })}
+    </div>`;
 
   container.querySelector('#tb-add').onclick = async () => {
     const number = Number(container.querySelector('#tb-num').value);
@@ -2179,6 +2273,16 @@ async function renderTables(container) {
       if (!menuUrl) return;
       void downloadTableQrPng(menuUrl, b.dataset.num ?? '');
     };
+  });
+  container.querySelector('#tb-prev')?.addEventListener('click', () => {
+    if (tablesUi.page <= 0) return;
+    tablesUi.page -= 1;
+    renderTables(container).catch(console.error);
+  });
+  container.querySelector('#tb-next')?.addEventListener('click', () => {
+    if (!tablesHasNext) return;
+    tablesUi.page += 1;
+    renderTables(container).catch(console.error);
   });
   container.querySelectorAll('.a-regqr').forEach((b) => {
     b.onclick = async () => {
