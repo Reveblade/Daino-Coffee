@@ -11,6 +11,13 @@ import * as bcrypt from 'bcrypt';
 import { User, UserDocument, UserRole } from './schemas/user.schema';
 import { JwtPayload } from '../auth/strategies/jwt.strategy';
 
+export interface StaffAdminPage<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 @Injectable()
 export class UsersService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
@@ -219,13 +226,35 @@ export class UsersService {
     return ok ? user : null;
   }
 
-  async listStaff(): Promise<UserDocument[]> {
-    return this.userModel
-      .find({
-        role: { $in: [UserRole.ADMIN, UserRole.CASHIER, UserRole.COURIER] },
-      })
-      .sort({ createdAt: -1 })
-      .exec();
+  async listStaff(opts?: {
+    page?: number;
+    pageSize?: number;
+  }): Promise<UserDocument[] | StaffAdminPage<UserDocument>> {
+    const filter = {
+      role: { $in: [UserRole.ADMIN, UserRole.CASHIER, UserRole.COURIER] },
+    };
+    const sort = { createdAt: -1 as const };
+    const usePaging =
+      opts != null &&
+      Number.isFinite(opts.page) &&
+      Number.isFinite(opts.pageSize) &&
+      opts.page! >= 0 &&
+      opts.pageSize! >= 1;
+    if (!usePaging) {
+      return this.userModel.find(filter).sort(sort).exec();
+    }
+    const page = Math.floor(Math.max(0, opts!.page!));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(opts!.pageSize!)));
+    const [total, items] = await Promise.all([
+      this.userModel.countDocuments(filter).exec(),
+      this.userModel
+        .find(filter)
+        .sort(sort)
+        .skip(page * pageSize)
+        .limit(pageSize)
+        .exec(),
+    ]);
+    return { items, total, page, pageSize };
   }
 
   async listActiveCouriers(): Promise<UserDocument[]> {

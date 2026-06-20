@@ -9,6 +9,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -228,7 +229,18 @@ export class AdminController {
 
   @Get('staff')
   @Roles(UserRole.ADMIN_OWNER, UserRole.ADMIN)
-  listStaff() {
+  listStaff(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+    const p =
+      page !== undefined && page !== '' ? parseInt(page, 10) : Number.NaN;
+    const ps =
+      pageSize !== undefined && pageSize !== ''
+        ? parseInt(pageSize, 10)
+        : Number.NaN;
+    const usePaging =
+      Number.isFinite(p) && Number.isFinite(ps) && p >= 0 && ps >= 1;
+    if (usePaging) {
+      return this.users.listStaff({ page: p, pageSize: ps });
+    }
     return this.users.listStaff();
   }
 

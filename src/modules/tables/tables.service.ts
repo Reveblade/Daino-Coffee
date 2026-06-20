@@ -14,6 +14,13 @@ import {
   generateTableSlug,
 } from './schemas/table.schema';
 
+export interface TableAdminPage<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 @Injectable()
 export class TablesService {
   private readonly logger = new Logger(TablesService.name);
@@ -78,8 +85,32 @@ export class TablesService {
     return this.tableModel.findOne({ number }).exec();
   }
 
-  async listAll(): Promise<TableDocument[]> {
-    return this.tableModel.find().sort({ number: 1 }).exec();
+  async listAll(opts?: {
+    page?: number;
+    pageSize?: number;
+  }): Promise<TableDocument[] | TableAdminPage<TableDocument>> {
+    const sort = { number: 1 as const };
+    const usePaging =
+      opts != null &&
+      Number.isFinite(opts.page) &&
+      Number.isFinite(opts.pageSize) &&
+      opts.page! >= 0 &&
+      opts.pageSize! >= 1;
+    if (!usePaging) {
+      return this.tableModel.find().sort(sort).exec();
+    }
+    const page = Math.floor(Math.max(0, opts!.page!));
+    const pageSize = Math.min(100, Math.max(1, Math.floor(opts!.pageSize!)));
+    const [total, items] = await Promise.all([
+      this.tableModel.countDocuments().exec(),
+      this.tableModel
+        .find()
+        .sort(sort)
+        .skip(page * pageSize)
+        .limit(pageSize)
+        .exec(),
+    ]);
+    return { items, total, page, pageSize };
   }
 
   async createTable(number: number, label?: string): Promise<TableDocument> {

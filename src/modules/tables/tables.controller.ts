@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { TablesService } from './tables.service';
@@ -47,7 +48,18 @@ export class TablesController {
   @Get('admin/tables')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN_OWNER, UserRole.ADMIN)
-  listAdmin() {
+  listAdmin(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+    const p =
+      page !== undefined && page !== '' ? parseInt(page, 10) : Number.NaN;
+    const ps =
+      pageSize !== undefined && pageSize !== ''
+        ? parseInt(pageSize, 10)
+        : Number.NaN;
+    const usePaging =
+      Number.isFinite(p) && Number.isFinite(ps) && p >= 0 && ps >= 1;
+    if (usePaging) {
+      return this.tables.listAll({ page: p, pageSize: ps });
+    }
     return this.tables.listAll();
   }
 
