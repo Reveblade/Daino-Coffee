@@ -1,7 +1,7 @@
 /**
  * Greedy line-breaking for the mission block; inter-word gaps (.mission-w-gap) flex to
- * absorb slack per line. Short rows opt out of justification so mid-width screens
- * do not stretch a few words across the whole container.
+ * absorb slack per line. Line breaks are calculated against the desktop reference
+ * width so narrow screens keep the same composition and only scale the type down.
  */
 
 /** Landscape-friendly Unsplash CDN URLs (beans, cups, brewing) — IDs verified to respond 200. */
@@ -29,6 +29,13 @@ const MISSION_PHRASES = [
 export const MISSION_ARIA_LABEL = MISSION_PHRASES.join(' ');
 
 const COMPACT_LINE_FILL_THRESHOLD = 0.76;
+const DESKTOP_LAYOUT_WIDTH = 1240;
+const DESKTOP_FONT_REM = 3.55;
+const NATURAL_FONT_MIN_REM = 1.45;
+const NATURAL_FONT_FLUID_VW = 3.4;
+const NATURAL_FONT_FLUID_REM = 0.75;
+const DESKTOP_PILL_MIN_PX = 76;
+const MIN_FITTED_FONT_PX = 8;
 
 function coffeeImageAtPillIndex(index) {
   return COFFEE_IMAGE_URLS[index % COFFEE_IMAGE_URLS.length];
@@ -60,6 +67,38 @@ function measureLineWidth(tokens, gapPx, pillMinPx, probe) {
   if (!tokens.length) return 0;
   const tokenWidth = tokens.reduce((total, token) => total + measureTokenWidth(token, pillMinPx, probe), 0);
   return tokenWidth + gapPx * (tokens.length - 1);
+}
+
+function measureWidestLine(lines, gapPx, pillMinPx, probe) {
+  return lines.reduce((widest, line) => Math.max(widest, measureLineWidth(line, gapPx, pillMinPx, probe)), 0);
+}
+
+function rootFontSizePx() {
+  return parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function naturalMissionFontSizePx() {
+  const rem = rootFontSizePx();
+  return clampNumber(
+    window.innerWidth * (NATURAL_FONT_FLUID_VW / 100) + NATURAL_FONT_FLUID_REM * rem,
+    NATURAL_FONT_MIN_REM * rem,
+    DESKTOP_FONT_REM * rem,
+  );
+}
+
+function desktopMissionFontSizePx() {
+  return DESKTOP_FONT_REM * rootFontSizePx();
+}
+
+function syncProbeFont(probe, cs, fontSizePx = undefined) {
+  probe.style.font = cs.font;
+  probe.style.fontVariationSettings = cs.fontVariationSettings;
+  probe.style.letterSpacing = cs.letterSpacing;
+  if (fontSizePx !== undefined) probe.style.fontSize = `${fontSizePx}px`;
 }
 
 function breakIntoLines(tokens, availW, gapPx, pillMinPx, probe) {
@@ -187,22 +226,56 @@ export function layoutMissionBlock(container) {
     container.appendChild(pillProbe);
   }
 
-  const cs = getComputedStyle(container);
-  probe.style.font = cs.font;
-
-  const fontSize = parseFloat(cs.fontSize) || 22;
-  /* Must match .mission-justified-root --mission-inline-gap (0.14em) and .mission-line--has-pill column-gap. */
-  const gapPx = Math.max(4, fontSize * 0.14);
-  const pillMinPx = Math.max(
-    24,
-    pillProbe.getBoundingClientRect().width || fontSize * 1.08,
-  );
-
   const availW = Math.max(0, container.clientWidth - 2);
   if (availW < 40) return;
 
+  const naturalFontSize = naturalMissionFontSizePx();
+  container.style.fontSize = `${naturalFontSize}px`;
+
+  let cs = getComputedStyle(container);
+  const desktopFontSize = desktopMissionFontSizePx();
+  const desktopGapPx = Math.max(4, desktopFontSize * 0.14);
+  syncProbeFont(probe, cs, desktopFontSize);
+
   const tokens = tokenize(MISSION_PHRASES);
-  const lines = breakIntoLines(tokens, availW, gapPx, pillMinPx, probe);
+  const lines = breakIntoLines(tokens, DESKTOP_LAYOUT_WIDTH, desktopGapPx, DESKTOP_PILL_MIN_PX, probe);
+  const compactByLine = lines.map(
+    (row) => measureLineWidth(row, desktopGapPx, DESKTOP_PILL_MIN_PX, probe) / DESKTOP_LAYOUT_WIDTH < COMPACT_LINE_FILL_THRESHOLD,
+  );
+
+  syncProbeFont(probe, cs);
+  let fontSize = naturalFontSize;
+  let gapPx = Math.max(4, fontSize * 0.14);
+  let pillMinPx = Math.max(
+    24,
+    pillProbe.getBoundingClientRect().width || fontSize * 1.08,
+  );
+  let widestLine = measureWidestLine(lines, gapPx, pillMinPx, probe);
+
+  if (widestLine > availW) {
+    fontSize = Math.max(MIN_FITTED_FONT_PX, fontSize * (availW / widestLine));
+    container.style.fontSize = `${fontSize}px`;
+    cs = getComputedStyle(container);
+    syncProbeFont(probe, cs);
+    gapPx = Math.max(4, fontSize * 0.14);
+    pillMinPx = Math.max(
+      24,
+      pillProbe.getBoundingClientRect().width || fontSize * 1.08,
+    );
+    widestLine = measureWidestLine(lines, gapPx, pillMinPx, probe);
+  }
+
+  if (widestLine > availW) {
+    fontSize = Math.max(MIN_FITTED_FONT_PX, fontSize * (availW / widestLine));
+    container.style.fontSize = `${fontSize}px`;
+    cs = getComputedStyle(container);
+    syncProbeFont(probe, cs);
+    gapPx = Math.max(4, fontSize * 0.14);
+    pillMinPx = Math.max(
+      24,
+      pillProbe.getBoundingClientRect().width || fontSize * 1.08,
+    );
+  }
 
   /** Clear user nodes but keep measurement probes (re-append after layout). */
   container
@@ -210,11 +283,9 @@ export function layoutMissionBlock(container) {
     .forEach((el) => el.remove());
 
   const pillPick = { i: 0 };
-  for (const row of lines) {
-    const rowW = measureLineWidth(row, gapPx, pillMinPx, probe);
-    const compact = rowW / availW < COMPACT_LINE_FILL_THRESHOLD;
-    container.appendChild(renderLine(row, pillPick, compact));
-  }
+  lines.forEach((row, index) => {
+    container.appendChild(renderLine(row, pillPick, compactByLine[index]));
+  });
 
   if (!container.contains(probe)) container.appendChild(probe);
   if (!container.contains(pillProbe)) container.appendChild(pillProbe);

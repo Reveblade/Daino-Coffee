@@ -30,10 +30,19 @@ const CART_STORAGE_PREFIX = 'daino:customer-cart:v1:';
 
 /** `/siparis/hesap` alt sekmesi */
 let accountTab = 'hesabim';
+/** @type {{ type: 'success' | 'error', text: string } | null} */
+let cartFeedback = null;
+/** @type {number} */
+let selectedOnlineAddressIndex = 0;
+/** @type {string | null} */
+let addressFeedback = null;
+/** @type {number} */
+let customerOrdersHistoryPage = 0;
 
 const ACCOUNT_TABS = new Set(['hesabim', 'profilim', 'adreslerim', 'siparislerim']);
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? '';
 const GOOGLE_MAPS_MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID?.trim() ?? '';
+const CUSTOMER_ORDER_HISTORY_PAGE_SIZE = 10;
 
 /** @type {Promise<any> | null} */
 let googleMapsLoadPromise = null;
@@ -310,6 +319,9 @@ function parseRoute() {
 }
 
 function setRoute(route, tab) {
+  if (route === 'account' && tableSlug) {
+    return;
+  }
   if (route === 'menu') {
     menuBrowseStack = [];
   }
@@ -769,7 +781,7 @@ function openProductOptionsModal(product, onPick) {
         'button',
         {
           type: 'button',
-          class: 'c-btn',
+          class: 'c-btn c-menu-prod-addbtn',
           onclick: () => {
             /** @type {{ groupId: string, selectedChoiceIds: string[] }[]} */
             const payload = [];
@@ -803,7 +815,7 @@ function openProductOptionsModal(product, onPick) {
             render().catch(console.error);
           },
         },
-        ['Sepete ekle'],
+        [phosphorIcon('plus'), el('span', { text: 'Ekle' })],
       ),
     ]),
   );
@@ -861,6 +873,8 @@ function renderMenu(root) {
   const isTable = !!tableSlug;
   const noTable = tableMeta && tableMeta.found === false;
   const storefront = tableMeta?.isStorefront === true;
+  const tableNumber = Number(tableMeta?.number);
+  const hideProductAddButton = isTable && (storefront || tableNumber === 0);
   const serviceOff = shop && !shop.acceptsOrders;
   const blockOrders = isTable && (noTable || storefront || serviceOff);
 
@@ -991,20 +1005,22 @@ function renderMenu(root) {
               text: blankLineText(p.description),
             }),
             el('div', { class: 'c-menu-prod-rowcard-foot' }, [
-              el('span', { class: 'c-price', text: formatTry(p.priceKurus) }),
-              el(
-                'button',
-                {
-                  class: 'c-btn c-btn--sm',
-                  disabled: blockOrders,
-                  onclick: () => {
-                    if (blockOrders) return;
-                    addProductChoiceToCart(p);
-                    render();
-                  },
-                },
-                [isTable ? 'Ekle' : 'Sepete'],
-              ),
+              el('span', { class: 'c-price c-menu-prod-rowcard-price', text: formatTry(p.priceKurus) }),
+              hideProductAddButton
+                ? null
+                : el(
+                    'button',
+                    {
+                      class: 'c-btn c-btn--sm c-menu-prod-addbtn',
+                      disabled: blockOrders,
+                      onclick: () => {
+                        if (blockOrders) return;
+                        addProductChoiceToCart(p);
+                        render();
+                      },
+                    },
+                    [phosphorIcon('plus'), el('span', { text: 'Ekle' })],
+                  ),
             ]),
           ]),
         ]),
@@ -1581,6 +1597,39 @@ function appendAddressForm(panel, opts = {}) {
   initAddressMap();
 }
 
+function openAddressModal() {
+  const overlay = el('div', { class: 'c-modal-back' });
+  const modal = el('div', { class: 'c-modal c-address-modal' });
+  const closeButton = el(
+    'button',
+    {
+      type: 'button',
+      class: 'c-btn c-btn--ghost',
+      onclick: () => overlay.remove(),
+    },
+    ['Kapat'],
+  );
+
+  appendAddressForm(modal, {
+    buttonLabel: 'Adresi kaydet',
+    onSaved: () => {
+      overlay.remove();
+      addressFeedback = 'Adres kaydedildi.';
+      render();
+    },
+  });
+
+  modal.append(el('div', { class: 'c-address-modal-actions' }, [closeButton]));
+  overlay.append(
+    el('div', { class: 'c-modal-wrap c-address-modal-wrap' }, [
+      el('h2', { class: 'c-modal-title', text: 'Yeni adres ekle' }),
+      modal,
+    ]),
+  );
+  document.body.append(overlay);
+  closeButton.focus();
+}
+
 /**
  * @param {HTMLElement} panel
  * @param {any} me
@@ -1595,45 +1644,192 @@ function renderAccountAdreslerim(panel, me) {
     );
     return;
   }
-  panel.append(el('h3', { class: 'c-cat-name', text: 'Kayıtlı adresler' }));
+  const addressCount = Array.isArray(me.addresses) ? me.addresses.length : 0;
+  panel.append(
+    el('div', { class: 'c-address-head' }, [
+      el('div', { class: 'c-address-head-copy' }, [
+        el('h3', { class: 'c-cat-name', text: 'Kayıtlı adresler' }),
+        el('p', {
+          class: 'c-muted c-address-head-lead',
+          text: addressCount
+            ? `${addressCount} adresiniz kayıtlı. Sipariş verirken teslimat adresinizi buradan seçebilirsiniz.`
+            : 'Teslimat için kullanacağınız ilk adresi ekleyin.',
+        }),
+      ]),
+      el(
+        'button',
+        {
+          type: 'button',
+          class: 'c-btn',
+          onclick: openAddressModal,
+        },
+        ['Yeni adres ekle'],
+      ),
+    ]),
+  );
+  if (addressFeedback) {
+    panel.append(el('p', { class: 'c-feedback c-feedback--success', text: addressFeedback }));
+    addressFeedback = null;
+  }
   if (me.addresses?.length) {
     me.addresses.forEach((a, idx) => {
+      const status = el('p', { class: 'c-address-delete-status', 'aria-live': 'polite' });
+      const deleteButton = el(
+        'button',
+        {
+          type: 'button',
+          class: 'c-btn c-btn--ghost c-btn--sm',
+        },
+        ['Sil'],
+      );
+      const cancelButton = el(
+        'button',
+        {
+          type: 'button',
+          class: 'c-btn c-btn--ghost c-btn--sm',
+        },
+        ['Vazgeç'],
+      );
+      const confirmButton = el(
+        'button',
+        {
+          type: 'button',
+          class: 'c-btn c-btn--sm c-btn--danger',
+        },
+        ['Evet, sil'],
+      );
+      const confirmBox = el(
+        'div',
+        { class: 'c-address-delete-confirm', hidden: true },
+        [
+          el('span', { class: 'c-address-delete-question', text: 'Emin misiniz?' }),
+          confirmButton,
+          cancelButton,
+        ],
+      );
+
+      deleteButton.addEventListener('click', () => {
+        status.textContent = '';
+        deleteButton.hidden = true;
+        confirmBox.hidden = false;
+        confirmButton.focus();
+      });
+      cancelButton.addEventListener('click', () => {
+        status.textContent = '';
+        confirmBox.hidden = true;
+        deleteButton.hidden = false;
+        deleteButton.focus();
+      });
+      confirmButton.addEventListener('click', async () => {
+        status.textContent = '';
+        confirmButton.disabled = true;
+        cancelButton.disabled = true;
+        try {
+          await api(`/users/addresses/${idx}`, { method: 'DELETE' });
+          addressFeedback = 'Adres silindi.';
+          render();
+        } catch (e) {
+          status.textContent = e.message || 'Adres silinemedi.';
+          confirmButton.disabled = false;
+          cancelButton.disabled = false;
+        }
+      });
+
       panel.append(
         el('div', { class: 'c-address-row' }, [
           el('div', { class: 'c-address-row-text' }, [
-            `${a.label}: ${a.line1}${a.district ? `, ${a.district}` : ''} — ${a.city}`,
+            el('strong', { class: 'c-address-row-label', text: a.label }),
+            el('span', {
+              class: 'c-address-row-line',
+              text: `${a.line1}${a.district ? `, ${a.district}` : ''} - ${a.city}`,
+            }),
+            status,
           ]),
-          el(
-            'button',
-            {
-              type: 'button',
-              class: 'c-btn c-btn--ghost c-btn--sm',
-              onclick: async () => {
-                if (!confirm('Bu adres silinsin mi?')) return;
-                try {
-                  await api(`/users/addresses/${idx}`, { method: 'DELETE' });
-                  render();
-                } catch (e) {
-                  alert(e.message || 'Silinemedi');
-                }
-              },
-            },
-            ['Sil'],
-          ),
+          el('div', { class: 'c-address-actions' }, [deleteButton, confirmBox]),
         ]),
       );
     });
   } else {
-    panel.append(el('p', { class: 'c-muted', text: 'Kayıtlı adres yok.' }));
+    panel.append(
+      el('div', { class: 'c-address-empty' }, [
+        el('strong', { text: 'Henüz kayıtlı adres yok.' }),
+        el('p', {
+          class: 'c-muted',
+          text: 'Yeni adres ekle butonuyla haritadan konum seçip adres bilgilerinizi kaydedebilirsiniz.',
+        }),
+      ]),
+    );
   }
+}
+
+/** @param {any} order */
+function customerOrderCard(order) {
+  const lines = (order.items || []).map((it) => customerOrderItemLine(it));
+  return el('article', { class: 'c-order-card c-product-line' }, [
+    el('div', { class: 'c-product-line-body' }, [
+      el('div', { class: 'c-order-card-head c-product-line-head' }, [
+        el('span', { class: 'c-order-id', text: `#${String(order._id).slice(-6)}` }),
+        el('span', { class: 'c-order-status', text: onlineOrderStatusTr(order) }),
+      ]),
+      lines.length
+        ? el(
+            'ul',
+            { class: 'c-order-items c-product-line-items' },
+            lines.map((line) => el('li', { text: line })),
+          )
+        : el('p', {
+            class: 'c-muted c-product-line-desc',
+            text: 'Ürün bilgisi yok.',
+          }),
+      el('div', { class: 'c-product-line-foot' }, [
+        el('span', {
+          class: 'c-price',
+          text: formatTry(order.totalKurus ?? 0),
+        }),
+      ]),
+    ]),
+  ]);
+}
+
+/**
+ * @param {HTMLElement} panel
+ * @param {{ total?: number, page?: number, pageSize?: number }} hist
+ */
+function appendCustomerOrderHistoryPagination(panel, hist) {
+  const total = Math.max(0, Number(hist?.total) || 0);
+  const pageSize = Math.max(1, Number(hist?.pageSize) || CUSTOMER_ORDER_HISTORY_PAGE_SIZE);
+  const page = Math.max(0, Number(hist?.page) || 0);
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (totalPages <= 1) return;
+
+  const start = page * pageSize + 1;
+  const end = Math.min(total, (page + 1) * pageSize);
   panel.append(
-    el('h3', {
-      class: 'c-cat-name',
-      style: 'margin-top:20px',
-      text: 'Yeni adres',
-    }),
+    el('div', { class: 'c-pagination', 'aria-label': 'Geçmiş sipariş sayfaları' }, [
+      el('button', {
+        type: 'button',
+        class: 'c-btn c-btn--ghost c-btn--sm',
+        disabled: page <= 0,
+        onclick: () => {
+          customerOrdersHistoryPage = Math.max(0, page - 1);
+          render().catch(console.error);
+        },
+      }, ['Önceki']),
+      el('span', {
+        class: 'c-pagination-info',
+        text: `${start}-${end} / ${total} sipariş`,
+      }),
+      el('button', {
+        type: 'button',
+        class: 'c-btn c-btn--ghost c-btn--sm',
+        disabled: page >= totalPages - 1,
+        onclick: () => {
+          customerOrdersHistoryPage = Math.min(totalPages - 1, page + 1);
+          render().catch(console.error);
+        },
+      }, ['Sonraki']),
+    ]),
   );
-  appendAddressForm(panel);
 }
 
 /**
@@ -1652,30 +1848,26 @@ function renderAccountSiparislerim(panel, me) {
   }
   const loading = el('p', { class: 'c-muted', text: 'Siparişler yükleniyor…' });
   panel.append(loading);
-  Promise.all([api('/orders'), api('/orders/history?page=0&pageSize=20')])
+  Promise.all([
+    api('/orders'),
+    api(`/orders/history?page=${customerOrdersHistoryPage}&pageSize=${CUSTOMER_ORDER_HISTORY_PAGE_SIZE}`),
+  ])
     .then(([active, hist]) => {
       panel.innerHTML = '';
       const act = Array.isArray(active) ? active : [];
       const items = hist?.items ?? [];
+      const totalHistory = Math.max(0, Number(hist?.total) || 0);
+      if (!items.length && totalHistory > 0 && customerOrdersHistoryPage > 0) {
+        customerOrdersHistoryPage = 0;
+        render().catch(console.error);
+        return;
+      }
       panel.append(el('h3', { class: 'c-cat-name', text: 'Devam eden siparişler' }));
       if (!act.length) {
         panel.append(el('p', { class: 'c-muted', text: 'Aktif web siparişiniz yok.' }));
       } else {
         act.forEach((o) => {
-          const lines = (o.items || []).map((it) => customerOrderItemLine(it)).join(', ');
-          panel.append(
-            el('div', { class: 'c-order-card' }, [
-              el('div', { class: 'c-order-card-head' }, [
-                el('span', { class: 'c-order-id', text: `#${String(o._id).slice(-6)}` }),
-                el('span', { class: 'c-order-status', text: onlineOrderStatusTr(o) }),
-              ]),
-              el('p', { class: 'c-muted', style: 'margin:6px 0', text: lines }),
-              el('p', {
-                class: 'c-price',
-                text: formatTry(o.totalKurus ?? 0),
-              }),
-            ]),
-          );
+          panel.append(customerOrderCard(o));
         });
       }
       panel.append(
@@ -1689,21 +1881,9 @@ function renderAccountSiparislerim(panel, me) {
         panel.append(el('p', { class: 'c-muted', text: 'Henüz tamamlanan sipariş yok.' }));
       } else {
         items.forEach((o) => {
-          const lines = (o.items || []).map((it) => customerOrderItemLine(it)).join(', ');
-          panel.append(
-            el('div', { class: 'c-order-card' }, [
-              el('div', { class: 'c-order-card-head' }, [
-                el('span', { class: 'c-order-id', text: `#${String(o._id).slice(-6)}` }),
-                el('span', { class: 'c-order-status', text: onlineOrderStatusTr(o) }),
-              ]),
-              el('p', { class: 'c-muted', style: 'margin:6px 0', text: lines }),
-              el('p', {
-                class: 'c-price',
-                text: formatTry(o.totalKurus ?? 0),
-              }),
-            ]),
-          );
+          panel.append(customerOrderCard(o));
         });
+        appendCustomerOrderHistoryPagination(panel, hist);
       }
     })
     .catch(() => {
@@ -2160,27 +2340,69 @@ function renderCart(root, me) {
     );
     renderTableAccount(root);
   }
-  if (!cart.length) {
+  if (cartFeedback) {
     root.append(
       el('p', {
-        class: 'c-muted',
-        text: isTable
-          ? 'Yeni ek sepetiniz boş. Ürün seçmek için menüye dönebilirsiniz.'
-          : 'Sepet boş.',
+        class: `c-feedback c-feedback--${cartFeedback.type}`,
+        text: cartFeedback.text,
+        'aria-live': 'polite',
       }),
+    );
+    cartFeedback = null;
+  }
+  if (!cart.length) {
+    root.append(
+      el('section', { class: 'c-cart-empty', 'aria-label': 'Boş sepet' }, [
+        el('p', {
+          class: 'c-cart-empty-title',
+          text: isTable ? 'Yeni ek sepetiniz boş' : 'Sepet boş',
+        }),
+        el('div', { class: 'c-cart-empty-actions' }, [
+          el(
+            'button',
+            {
+              type: 'button',
+              class: 'c-cart-empty-action',
+              'aria-label': 'Menüye dön',
+              title: 'Menüye dön',
+              onclick: () => setRoute('menu'),
+            },
+            [
+              phosphorIcon('list-bullets'),
+              el('span', { text: 'Menü' }),
+            ],
+          ),
+          tableSlug
+            ? null
+            : el(
+                'button',
+                {
+                  type: 'button',
+                  class: 'c-cart-empty-action',
+                  'aria-label': 'Geçmiş siparişlerime dön',
+                  title: 'Geçmiş siparişlerime dön',
+                  onclick: () => setRoute('account', 'siparislerim'),
+                },
+                [
+                  phosphorIcon('clock-counter-clockwise'),
+                  el('span', { text: 'Geçmiş' }),
+                ],
+              ),
+        ]),
+      ]),
     );
     return;
   }
   root.append(
     ...cart.map((c, idx) =>
-      el('div', { class: 'c-card' }, [
-        el('div', { class: 'c-card-body' }, [
-          el('p', { class: 'c-card-title', text: c.name }),
+      el('article', { class: 'c-card c-cart-line c-product-line' }, [
+        el('div', { class: 'c-card-body c-product-line-body' }, [
+          el('p', { class: 'c-card-title c-product-line-title', text: c.name }),
           c.optionsSummary
-            ? el('p', { class: 'c-muted c-card-opts', text: c.optionsSummary })
+            ? el('p', { class: 'c-muted c-card-opts c-product-line-desc', text: c.optionsSummary })
             : null,
-          el('div', { class: 'c-row' }, [
-            el('span', { text: `${c.qty} × ${formatTry(c.unitPriceKurus)}` }),
+          el('div', { class: 'c-row c-product-line-foot' }, [
+            el('span', { class: 'c-price', text: `${c.qty} × ${formatTry(c.unitPriceKurus)}` }),
             el(
               'button',
               {
@@ -2211,6 +2433,41 @@ function renderCart(root, me) {
     !!tok &&
     me?.role === 'CUSTOMER' &&
     !customerAccountComplete(me);
+  const onlineAddresses = !isTable && me?.role === 'CUSTOMER' && Array.isArray(me.addresses)
+    ? me.addresses
+    : [];
+  if (onlineAddresses.length && selectedOnlineAddressIndex >= onlineAddresses.length) {
+    selectedOnlineAddressIndex = 0;
+  }
+
+  if (!isTable && onlineAddresses.length) {
+    const addressSelect = el('select', {
+      class: 'c-input',
+      id: 'online-address-select',
+      onchange: (event) => {
+        selectedOnlineAddressIndex = Number(event.target.value);
+      },
+    });
+    onlineAddresses.forEach((a, idx) => {
+      addressSelect.append(
+        el('option', {
+          value: String(idx),
+          selected: idx === selectedOnlineAddressIndex,
+          text: `${a.label}: ${a.line1}${a.district ? `, ${a.district}` : ''} — ${a.city}`,
+        }),
+      );
+    });
+    root.append(
+      el('div', { class: 'c-cart-address' }, [
+        el('label', {
+          class: 'c-label',
+          for: 'online-address-select',
+          text: 'Teslimat adresi',
+        }),
+        addressSelect,
+      ]),
+    );
+  }
 
   root.append(
     el('div', { class: 'c-row', style: 'margin-top:16px' }, [
@@ -2222,7 +2479,9 @@ function renderCart(root, me) {
         'button',
         {
           class: 'c-btn',
-          disabled: isTable ? !canOrderTable : !tok || !canOrderOnline || webAccountBlock,
+          disabled: isTable
+            ? !canOrderTable
+            : !tok || !canOrderOnline || webAccountBlock || !onlineAddresses.length,
           onclick: () => submitOrder(),
         },
         [isTable ? 'Masaya sipariş ver' : 'Online sipariş ver'],
@@ -2258,6 +2517,15 @@ function renderCart(root, me) {
     );
   }
 
+  if (!isTable && tok && !webAccountBlock && !onlineAddresses.length) {
+    root.append(
+      el('p', {
+        class: 'c-error',
+        text: 'Sipariş vermek için önce teslimat adresi ekleyin.',
+      }),
+    );
+  }
+
   if (isTable && !canOrderTable) {
     root.append(
       el(
@@ -2285,11 +2553,12 @@ async function submitOrder() {
       });
       cart = [];
       persistCart();
-      alert(
-        res?.augmented
+      cartFeedback = {
+        type: 'success',
+        text: res?.augmented
           ? 'Seçtikleriniz mevcut masanın siparişine eklendi.'
           : 'Siparişiniz alındı.',
-      );
+      };
     } else {
       const tok = getToken() || getRefreshToken();
       if (!tok) {
@@ -2299,26 +2568,35 @@ async function submitOrder() {
       }
       const me = await api('/users/me');
       if (!customerAccountComplete(me)) {
-        alert('Önce hesap bilgilerinizi ve teslimat adresinizi tamamlayın.');
+        cartFeedback = {
+          type: 'error',
+          text: 'Önce hesap bilgilerinizi ve teslimat adresinizi tamamlayın.',
+        };
         setRoute('account', 'hesabim');
         render();
         return;
       }
-      const ix = Number(
-        prompt(`Teslimat adresi indeksi (0–${me.addresses.length - 1}):`, '0'),
-      );
-      if (Number.isNaN(ix)) return;
+      if (!Array.isArray(me.addresses) || !me.addresses.length) {
+        cartFeedback = {
+          type: 'error',
+          text: 'Sipariş vermek için önce teslimat adresi ekleyin.',
+        };
+        render();
+        return;
+      }
+      const ix = selectedOnlineAddressIndex < me.addresses.length ? selectedOnlineAddressIndex : 0;
       await api('/orders/online', {
         method: 'POST',
         body: JSON.stringify({ items, addressIndex: ix }),
       });
       cart = [];
       persistCart();
-      alert('Siparişiniz alındı.');
+      cartFeedback = { type: 'success', text: 'Siparişiniz alındı.' };
     }
     render();
   } catch (e) {
-    alert(e.message || 'Sipariş başarısız');
+    cartFeedback = { type: 'error', text: e.message || 'Sipariş başarısız.' };
+    render();
   }
 }
 
@@ -2364,29 +2642,31 @@ function renderTopbar(me) {
     ? `Özet${nCart ? `, ${nCart} ürün` : ''}`
     : `Sepet${nCart ? `, ${nCart} ürün` : ''}`;
   const channelLabel = topbarChannelLabel();
-  const profileBtn = hasSession
-    ? el(
-        'button',
-        {
-          type: 'button',
-          class: 'c-btn c-btn--ghost c-topbar-iconbtn',
-          'aria-label': 'Hesap',
-          title: 'Hesap',
-          onclick: goAccount,
-        },
-        [phosphorIcon('user-circle')],
-      )
-    : el(
-        'button',
-        {
-          type: 'button',
-          class: 'c-btn c-btn--ghost c-topbar-iconbtn',
-          'aria-label': 'Giriş yap',
-          title: 'Giriş yap',
-          onclick: goAccount,
-        },
-        [phosphorIcon('sign-in')],
-      );
+  const profileBtn = tableSlug
+    ? null
+    : hasSession
+      ? el(
+          'button',
+          {
+            type: 'button',
+            class: 'c-btn c-btn--ghost c-topbar-iconbtn',
+            'aria-label': 'Hesap',
+            title: 'Hesap',
+            onclick: goAccount,
+          },
+          [phosphorIcon('user-circle')],
+        )
+      : el(
+          'button',
+          {
+            type: 'button',
+            class: 'c-btn c-btn--ghost c-topbar-iconbtn',
+            'aria-label': 'Giriş yap',
+            title: 'Giriş yap',
+            onclick: goAccount,
+          },
+          [phosphorIcon('sign-in')],
+        );
   const brandLogoStyle = `mask-image:url("${geyikBrandUrl}");-webkit-mask-image:url("${geyikBrandUrl}")`;
   return el('header', { class: 'c-topbar' }, [
     el(

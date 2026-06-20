@@ -708,7 +708,7 @@
       background: var(--cream);
       color: var(--green);
       padding: clamp(20px, 4vw, 48px) clamp(20px, 4vw, 48px)
-        clamp(48px, 10vw, 120px);
+        clamp(160px, 22vw, 280px);
     }
     .coffee-showcase-stack {
       max-width: 720px;
@@ -1894,7 +1894,7 @@
       text-transform: uppercase;
       margin: 0 auto;
       width: 100%;
-      max-width: min(1520px, 100%);
+      max-width: min(1240px, 100%);
       box-sizing: border-box;
       display: flex;
       flex-direction: column;
@@ -2033,7 +2033,7 @@
       letter-spacing: 0.05em;
       text-transform: uppercase;
       color: rgba(var(--off-white-rgb), 0.96);
-      max-width: min(1520px, 100%);
+      max-width: min(1240px, 100%);
       margin: 0 auto;
       text-wrap: balance;
     }

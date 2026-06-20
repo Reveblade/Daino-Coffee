@@ -426,9 +426,19 @@ if (missionJustified) {
   bindMissionLayout(missionJustified);
 }
 
+const CUSTOMER_TOKEN_KEY = 'daino_customer_token';
+const CUSTOMER_REFRESH_KEY = 'daino_customer_refresh';
+
+function hasCustomerSession() {
+  return Boolean(
+    localStorage.getItem(CUSTOMER_TOKEN_KEY) || localStorage.getItem(CUSTOMER_REFRESH_KEY),
+  );
+}
+
 document.querySelectorAll('[data-customer-auth-cta]').forEach((button) => {
-  button.addEventListener('click', () => {
-    window.location.href = '/siparis/hesap';
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    window.location.href = hasCustomerSession() ? '/siparis' : '/siparis/hesap';
   });
 });
 
