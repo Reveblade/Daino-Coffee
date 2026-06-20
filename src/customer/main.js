@@ -43,6 +43,10 @@ const ACCOUNT_TABS = new Set(['hesabim', 'profilim', 'adreslerim', 'siparislerim
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? '';
 const GOOGLE_MAPS_MAP_ID = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID?.trim() ?? '';
 const CUSTOMER_ORDER_HISTORY_PAGE_SIZE = 10;
+const DELIVERY_DISTRICT = 'akhisar';
+const DEFAULT_DELIVERY_DISTRICT = 'Akhisar';
+const DEFAULT_DELIVERY_CITY = 'Manisa';
+const DELIVERY_AREA_MESSAGE = 'Web siparişi için teslimat adresi Akhisar içinde olmalıdır.';
 
 /** @type {Promise<any> | null} */
 let googleMapsLoadPromise = null;
@@ -65,6 +69,23 @@ function roleLabelTr(role) {
   return m[role] ?? role;
 }
 
+/** @param {unknown} value */
+function normalizeDeliveryText(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+/** @param {any | null | undefined} address */
+function isDeliveryAddressSupported(address) {
+  if (!address) return false;
+  return [address.district, address.city, address.formattedAddress].some((part) =>
+    normalizeDeliveryText(part).includes(DELIVERY_DISTRICT),
+  );
+}
+
 /** @param {any | null | undefined} me */
 function customerProfileComplete(me) {
   if (!me || me.role !== 'CUSTOMER') return true;
@@ -78,7 +99,7 @@ function customerProfileComplete(me) {
 function customerHasAddress(me) {
   if (!me || me.role !== 'CUSTOMER') return true;
   if (typeof me.hasAddress === 'boolean') return me.hasAddress;
-  return Array.isArray(me.addresses) && me.addresses.length > 0;
+  return Array.isArray(me.addresses) && me.addresses.some(isDeliveryAddressSupported);
 }
 
 /** @param {any | null | undefined} me */
@@ -1157,7 +1178,9 @@ function renderAccountHesabim(panel, me, activeOrders) {
     .toLocaleUpperCase('tr-TR');
   const profileComplete = customerProfileComplete(me);
   const hasAddress = customerHasAddress(me);
-  const addressCount = Array.isArray(me.addresses) ? me.addresses.length : 0;
+  const addressCount = Array.isArray(me.addresses)
+    ? me.addresses.filter(isDeliveryAddressSupported).length
+    : 0;
   const activeOrder = Array.isArray(activeOrders) ? activeOrders[0] : null;
   const statusCards = [
     {
@@ -1178,8 +1201,8 @@ function renderAccountHesabim(panel, me, activeOrders) {
         label: 'Adresler',
         value: hasAddress ? `${addressCount} kayıtlı adres` : 'Adres yok',
         note: hasAddress
-          ? 'Teslimat için kayıtlı adres seçebilirsiniz.'
-          : 'İlk teslimat adresinizi ekleyin.',
+          ? 'Teslimat için Akhisar içindeki kayıtlı adresinizi seçebilirsiniz.'
+          : 'İlk Akhisar teslimat adresinizi ekleyin.',
         ok: hasAddress,
         actionLabel: hasAddress ? 'Yönet' : 'Adres ekle',
         actionTab: 'adreslerim',
@@ -1373,11 +1396,13 @@ function appendAddressForm(panel, opts = {}) {
     class: 'c-input',
     placeholder: 'İlçe',
     autocomplete: 'address-level2',
+    value: DEFAULT_DELIVERY_DISTRICT,
   });
   const city = el('input', {
     class: 'c-input',
     placeholder: 'Şehir',
     autocomplete: 'address-level1',
+    value: DEFAULT_DELIVERY_CITY,
   });
   const mapSearch = el('input', {
     class: 'c-input c-map-search',
@@ -1405,8 +1430,8 @@ function appendAddressForm(panel, opts = {}) {
       lng: picked.lng,
     };
     if (picked.line1) /** @type {HTMLInputElement} */ (line1).value = picked.line1;
-    if (picked.district) /** @type {HTMLInputElement} */ (district).value = picked.district;
-    if (picked.city) /** @type {HTMLInputElement} */ (city).value = picked.city;
+    /** @type {HTMLInputElement} */ (district).value = picked.district || '';
+    /** @type {HTMLInputElement} */ (city).value = picked.city || '';
     mapStatus.textContent = picked.formattedAddress
       ? `Seçilen konum: ${picked.formattedAddress}`
       : 'Konum seçildi.';
@@ -1419,7 +1444,7 @@ function appendAddressForm(panel, opts = {}) {
       .then((google) => {
         if (!google) return;
         mapSelectionRequired = true;
-        const defaultCenter = { lat: 41.0082, lng: 28.9784 };
+        const defaultCenter = { lat: 38.9186, lng: 27.8401 };
         const mapOptions = {
           center: defaultCenter,
           zoom: 12,
@@ -1572,6 +1597,10 @@ function appendAddressForm(panel, opts = {}) {
             err.textContent = 'Adres adı, adres satırı ve şehir alanlarını eksiksiz girin.';
             return;
           }
+          if (!isDeliveryAddressSupported(payload)) {
+            err.textContent = DELIVERY_AREA_MESSAGE;
+            return;
+          }
           if (mapSelectionRequired && (payload.lat === undefined || payload.lng === undefined)) {
             err.textContent = 'Lütfen haritadan teslimat konumunu seçin.';
             return;
@@ -1652,8 +1681,8 @@ function renderAccountAdreslerim(panel, me) {
         el('p', {
           class: 'c-muted c-address-head-lead',
           text: addressCount
-            ? `${addressCount} adresiniz kayıtlı. Sipariş verirken teslimat adresinizi buradan seçebilirsiniz.`
-            : 'Teslimat için kullanacağınız ilk adresi ekleyin.',
+            ? `${addressCount} adresiniz kayıtlı. Web siparişlerinde Akhisar içindeki adresler kullanılabilir.`
+            : 'Teslimat için kullanacağınız ilk Akhisar adresini ekleyin.',
         }),
       ]),
       el(
@@ -1755,7 +1784,7 @@ function renderAccountAdreslerim(panel, me) {
         el('strong', { text: 'Henüz kayıtlı adres yok.' }),
         el('p', {
           class: 'c-muted',
-          text: 'Yeni adres ekle butonuyla haritadan konum seçip adres bilgilerinizi kaydedebilirsiniz.',
+          text: 'Yeni adres ekle butonuyla Akhisar içindeki teslimat konumunuzu seçip adres bilgilerinizi kaydedebilirsiniz.',
         }),
       ]),
     );
@@ -1907,7 +1936,7 @@ function renderAccountCompletionFlow(root, me) {
     el('h2', { class: 'c-section-title c-complete-title', text: 'Siparişe hazır olmanız için son adımlar' }),
     el('p', {
       class: 'c-muted c-complete-lead',
-      text: 'Web siparişlerinde teslimatı doğru hazırlayabilmemiz için isim, soyisim ve en az bir teslimat adresi gerekiyor.',
+      text: 'Web siparişlerinde teslimatı doğru hazırlayabilmemiz için isim, soyisim ve Akhisar içinde en az bir teslimat adresi gerekiyor.',
     }),
     el('div', { class: 'c-complete-steps', 'aria-label': 'Tamamlama adımları' }, [
       el('span', {
@@ -1993,7 +2022,7 @@ function renderAccountCompletionFlow(root, me) {
       el('p', {
         class: 'c-muted',
         style: 'margin-top:-4px;margin-bottom:12px;line-height:1.45',
-        text: 'Daha sonra Hesap > Adreslerim bölümünden yeni adres ekleyebilir veya silebilirsiniz.',
+        text: 'Daha sonra Hesap > Adreslerim bölümünden Akhisar içindeki yeni adreslerinizi ekleyebilir veya silebilirsiniz.',
       }),
     );
     appendAddressForm(panel, {
@@ -2439,6 +2468,13 @@ function renderCart(root, me) {
   if (onlineAddresses.length && selectedOnlineAddressIndex >= onlineAddresses.length) {
     selectedOnlineAddressIndex = 0;
   }
+  if (onlineAddresses.length && !isDeliveryAddressSupported(onlineAddresses[selectedOnlineAddressIndex])) {
+    const firstSupportedIndex = onlineAddresses.findIndex(isDeliveryAddressSupported);
+    selectedOnlineAddressIndex = firstSupportedIndex >= 0 ? firstSupportedIndex : 0;
+  }
+  const selectedOnlineAddress = onlineAddresses[selectedOnlineAddressIndex];
+  const hasSupportedOnlineAddress = onlineAddresses.some(isDeliveryAddressSupported);
+  const selectedAddressSupported = isDeliveryAddressSupported(selectedOnlineAddress);
 
   if (!isTable && onlineAddresses.length) {
     const addressSelect = el('select', {
@@ -2449,11 +2485,13 @@ function renderCart(root, me) {
       },
     });
     onlineAddresses.forEach((a, idx) => {
+      const supported = isDeliveryAddressSupported(a);
       addressSelect.append(
         el('option', {
           value: String(idx),
           selected: idx === selectedOnlineAddressIndex,
-          text: `${a.label}: ${a.line1}${a.district ? `, ${a.district}` : ''} — ${a.city}`,
+          disabled: !supported,
+          text: `${a.label}: ${a.line1}${a.district ? `, ${a.district}` : ''} — ${a.city}${supported ? '' : ' (Akhisar dışı)'}`,
         }),
       );
     });
@@ -2481,7 +2519,12 @@ function renderCart(root, me) {
           class: 'c-btn',
           disabled: isTable
             ? !canOrderTable
-            : !tok || !canOrderOnline || webAccountBlock || !onlineAddresses.length,
+            : !tok ||
+              !canOrderOnline ||
+              webAccountBlock ||
+              !onlineAddresses.length ||
+              !hasSupportedOnlineAddress ||
+              !selectedAddressSupported,
           onclick: () => submitOrder(),
         },
         [isTable ? 'Masaya sipariş ver' : 'Online sipariş ver'],
@@ -2521,7 +2564,16 @@ function renderCart(root, me) {
     root.append(
       el('p', {
         class: 'c-error',
-        text: 'Sipariş vermek için önce teslimat adresi ekleyin.',
+        text: 'Sipariş vermek için önce Akhisar içinde bir teslimat adresi ekleyin.',
+      }),
+    );
+  }
+
+  if (!isTable && tok && !webAccountBlock && onlineAddresses.length && !hasSupportedOnlineAddress) {
+    root.append(
+      el('p', {
+        class: 'c-error',
+        text: DELIVERY_AREA_MESSAGE,
       }),
     );
   }
@@ -2579,12 +2631,23 @@ async function submitOrder() {
       if (!Array.isArray(me.addresses) || !me.addresses.length) {
         cartFeedback = {
           type: 'error',
-          text: 'Sipariş vermek için önce teslimat adresi ekleyin.',
+          text: 'Sipariş vermek için önce Akhisar içinde bir teslimat adresi ekleyin.',
         };
         render();
         return;
       }
-      const ix = selectedOnlineAddressIndex < me.addresses.length ? selectedOnlineAddressIndex : 0;
+      let ix = selectedOnlineAddressIndex < me.addresses.length ? selectedOnlineAddressIndex : 0;
+      if (!isDeliveryAddressSupported(me.addresses[ix])) {
+        ix = me.addresses.findIndex(isDeliveryAddressSupported);
+      }
+      if (ix < 0) {
+        cartFeedback = {
+          type: 'error',
+          text: DELIVERY_AREA_MESSAGE,
+        };
+        render();
+        return;
+      }
       await api('/orders/online', {
         method: 'POST',
         body: JSON.stringify({ items, addressIndex: ix }),
