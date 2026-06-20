@@ -1,4 +1,5 @@
 import './style.css';
+import '@phosphor-icons/web/regular';
 import { DRINKS, orderHrefForDrink } from './drink-data.js';
 import geyikUrl from '../assets/geyik.svg?url';
 
@@ -7,54 +8,54 @@ document.documentElement.style.setProperty('--page-loader-deer-mask', `url("${ge
 const QUESTIONS = [
   {
     name: 'base',
-    emoji: '🥛',
+    icon: 'coffee',
     title: 'İçeceğin ana karakteri ne olsun?',
     options: [
-      { value: 'black', label: 'Sade kahve karakteri net olsun', emoji: '☕' },
-      { value: 'milk', label: 'Espresso sütle yumuşasın', emoji: '🥛' },
-      { value: 'tea', label: 'Bitkisel ve çay bazlı olsun', emoji: '🌿' },
-      { value: 'water', label: 'Meyveli ve ferah bir baz olsun', emoji: '💧' },
+      { value: 'black', label: 'Sade kahve karakteri net olsun', icon: 'coffee' },
+      { value: 'milk', label: 'Espresso sütle yumuşasın', icon: 'drop-half-bottom' },
+      { value: 'tea', label: 'Bitkisel ve çay bazlı olsun', icon: 'plant' },
+      { value: 'water', label: 'Meyveli ve ferah bir baz olsun', icon: 'drop' },
     ],
   },
   {
     name: 'flavor',
-    emoji: '🍫',
+    icon: 'cookie',
     title: 'Baskın aroma hangi yönde olsun?',
     options: [
-      { value: 'chocolate', label: 'Kakao ve bitter çikolata', emoji: '🍫' },
-      { value: 'caramel', label: 'Karamel ve bal tatlılığı', emoji: '🍯' },
-      { value: 'bitter', label: 'Kavruk, yoğun ve hafif acı', emoji: '🔥' },
-      { value: 'fruit', label: 'Meyvemsi, canlı ve hafif ekşi', emoji: '🍓' },
+      { value: 'chocolate', label: 'Kakao ve bitter çikolata', icon: 'cookie' },
+      { value: 'caramel', label: 'Karamel ve bal tatlılığı', icon: 'drop-half' },
+      { value: 'bitter', label: 'Kavruk, yoğun ve hafif acı', icon: 'fire' },
+      { value: 'fruit', label: 'Meyvemsi, canlı ve hafif ekşi', icon: 'orange-slice' },
     ],
   },
   {
     name: 'sweetness',
-    emoji: '🍬',
+    icon: 'sparkle',
     title: 'Tatlılık seviyen ne olsun?',
     options: [
-      { value: 'unsweet', label: 'Sade, şekersiz ve temiz', emoji: '✨' },
-      { value: 'balanced', label: 'Orta karar, dengeli tatlılık', emoji: '⚖️' },
-      { value: 'sweet', label: 'Belirgin tatlı ve keyifli', emoji: '🍬' },
+      { value: 'unsweet', label: 'Sade, şekersiz ve temiz', icon: 'sparkle' },
+      { value: 'balanced', label: 'Orta karar, dengeli tatlılık', icon: 'scales' },
+      { value: 'sweet', label: 'Belirgin tatlı ve keyifli', icon: 'cake' },
     ],
   },
   {
     name: 'body',
-    emoji: '🫖',
+    icon: 'bowl-steam',
     title: 'Doku ve gövde tercihin hangisi?',
     options: [
-      { value: 'dense', label: 'Kısa fincan, yoğun ve tok', emoji: '🫖' },
-      { value: 'creamy', label: 'Kremamsı, yuvarlak ve sütlü', emoji: '☁️' },
-      { value: 'light', label: 'Hafif, akışkan ve ferah', emoji: '💧' },
+      { value: 'dense', label: 'Kısa fincan, yoğun ve tok', icon: 'bowl-steam' },
+      { value: 'creamy', label: 'Kremamsı, yuvarlak ve sütlü', icon: 'cloud' },
+      { value: 'light', label: 'Hafif, akışkan ve ferah', icon: 'drop' },
     ],
   },
   {
     name: 'temperature',
-    emoji: '🧊',
+    icon: 'snowflake',
     title: 'Servis modu nasıl olsun?',
     options: [
-      { value: 'hot', label: 'Sıcak, klasik ve sakin', emoji: '♨️' },
-      { value: 'cold', label: 'Buzlu, serin ve kahveli', emoji: '🧊' },
-      { value: 'refreshing', label: 'Kafeinsiz veya kahve dışı ferahlık', emoji: '🍋' },
+      { value: 'hot', label: 'Sıcak, klasik ve sakin', icon: 'thermometer-hot' },
+      { value: 'cold', label: 'Buzlu, serin ve kahveli', icon: 'snowflake' },
+      { value: 'refreshing', label: 'Kafeinsiz veya kahve dışı ferahlık', icon: 'sun-horizon' },
     ],
   },
 ];
@@ -69,9 +70,28 @@ const progressText = document.querySelector('[data-quiz-progress-text]');
 const progressBar = document.querySelector('[data-quiz-progress-bar]');
 const result = document.querySelector('[data-drink-quiz-result]');
 const previewGrid = document.querySelector('[data-drink-preview-grid]');
+const miniOrbit = document.querySelector('.drink-quiz-mini-orbit');
 
 let currentStep = 0;
 const answers = new Map();
+
+function createIcon(name, className) {
+  const icon = document.createElement('i');
+  icon.className = `ph ph-${name} ${className}`;
+  icon.setAttribute('aria-hidden', 'true');
+  return icon;
+}
+
+function setNavButton(button, label, iconName, iconPosition = 'after') {
+  if (!button) return;
+  const text = document.createElement('span');
+  text.textContent = label;
+  button.replaceChildren(
+    ...(iconPosition === 'before'
+      ? [createIcon(iconName, 'drink-quiz-nav-icon'), text]
+      : [text, createIcon(iconName, 'drink-quiz-nav-icon')]),
+  );
+}
 
 function createPreviewCard(drink) {
   const card = document.createElement('a');
@@ -138,7 +158,7 @@ function renderStep() {
   fieldset.className = 'drink-quiz-question drink-quiz-question--step';
 
   const legend = document.createElement('legend');
-  legend.innerHTML = `<span class="drink-quiz-step-emoji" aria-hidden="true">${question.emoji}</span>${question.title}`;
+  legend.append(createIcon(question.icon, 'drink-quiz-step-icon'), document.createTextNode(question.title));
   fieldset.append(legend);
 
   const options = document.createElement('div');
@@ -154,19 +174,21 @@ function renderStep() {
     input.value = option.value;
     input.checked = option.value === saved;
 
-    const emoji = document.createElement('span');
-    emoji.className = 'drink-quiz-option-emoji';
-    emoji.textContent = option.emoji;
-
     const text = document.createElement('span');
     text.textContent = option.label;
 
     input.addEventListener('change', () => {
       answers.set(question.name, option.value);
-      renderStep();
+      options.querySelectorAll('.drink-quiz-option').forEach((item) => {
+        item.classList.remove('is-selected', 'is-choosing');
+      });
+      label.classList.add('is-selected');
+      void label.offsetWidth;
+      label.classList.add('is-choosing');
+      nextButton.disabled = false;
     });
 
-    label.append(input, emoji, text);
+    label.append(input, createIcon(option.icon, 'drink-quiz-option-icon'), text);
     options.append(label);
   });
 
@@ -175,12 +197,14 @@ function renderStep() {
 
   progressText.textContent = `${currentStep + 1} / ${QUESTIONS.length}`;
   progressBar.style.width = `${((currentStep + 1) / QUESTIONS.length) * 100}%`;
+  miniOrbit?.style.setProperty('--drink-quiz-mini-orbit-rotate', `${currentStep * 72}deg`);
   prevButton.hidden = false;
-  prevButton.textContent = 'Geri';
-  nextButton.textContent =
-    currentStep === QUESTIONS.length - 1
-      ? 'Sonucu göster'
-      : 'İleri';
+  setNavButton(prevButton, 'Geri', 'arrow-left', 'before');
+  setNavButton(
+    nextButton,
+    currentStep === QUESTIONS.length - 1 ? 'Sonucu göster' : 'İleri',
+    currentStep === QUESTIONS.length - 1 ? 'sparkle' : 'arrow-right',
+  );
   nextButton.disabled = !answers.has(question.name);
 
   stepSlot.classList.remove('is-animating');
@@ -192,13 +216,16 @@ function showResult() {
   form.hidden = true;
   result.hidden = false;
   result.innerHTML = `
+    <div class="drink-quiz-result-media">
+      <img src="${match.image}" alt="${match.alt}" width="800" height="800" decoding="async">
+    </div>
     <p class="drink-quiz-result-kicker">Senin favori içeceğin şu olmalı:</p>
     <h3>${match.name}</h3>
     <p>${match.tags.includes('milk') ? 'Yumuşak ve dengeli' : 'Net karakterli'} bir profil; seçtiğin tat, gövde ve servis tercihlerine en yakın seçenek.</p>
     <div class="drink-quiz-result-actions">
-      <a class="drink-detail-cta" href="${match.href}">İçeceği incele</a>
-      <a class="drink-detail-cta drink-detail-cta--ghost" href="${orderHrefForDrink(match)}">Sipariş ver</a>
-      <button type="button" class="drink-detail-cta drink-detail-cta--ghost" data-quiz-restart>Yeniden başla</button>
+      <a class="drink-detail-cta drink-quiz-result-action drink-quiz-result-action--light" href="${match.href}"><span>İçeceği incele</span><i class="ph ph-arrow-right" aria-hidden="true"></i></a>
+      <a class="drink-detail-cta drink-quiz-result-action drink-quiz-result-action--dark" href="${orderHrefForDrink(match)}"><span>Sipariş ver</span><i class="ph ph-shopping-bag" aria-hidden="true"></i></a>
+      <button type="button" class="drink-detail-cta drink-quiz-result-action drink-quiz-result-action--light drink-quiz-result-action--wide" data-quiz-restart><span>Yeniden başla</span><i class="ph ph-arrow-clockwise" aria-hidden="true"></i></button>
     </div>
   `;
   result.querySelector('[data-quiz-restart]')?.addEventListener('click', () => {
