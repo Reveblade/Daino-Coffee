@@ -761,9 +761,11 @@
       text-transform: uppercase;
     }
     .coffee-grid {
+      --coffee-grid-row-gap: clamp(20px, 3vw, 36px);
+      --coffee-grid-col-gap: clamp(16px, 2.5vw, 28px);
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: clamp(20px, 3vw, 36px) clamp(16px, 2.5vw, 28px);
+      gap: var(--coffee-grid-row-gap) var(--coffee-grid-col-gap);
       max-width: 720px;
       margin: 0 auto;
     }
@@ -871,8 +873,11 @@
       white-space: nowrap;
     }
     .coffee-grid-carousel {
+      --drink-carousel-card-size: min(180px, calc((var(--drink-carousel-grid-width) - var(--coffee-grid-col-gap) - var(--coffee-grid-col-gap)) / 3));
+      --drink-carousel-label-height: 2.2em;
+      --drink-carousel-row-height: calc(var(--drink-carousel-card-size) + 10px + var(--drink-carousel-label-height));
       max-width: var(--drink-carousel-grid-width);
-      min-height: clamp(560px, 72vw, 692px);
+      min-height: calc(var(--drink-carousel-row-height) + var(--drink-carousel-row-height) + var(--drink-carousel-row-height) + var(--coffee-grid-row-gap) + var(--coffee-grid-row-gap));
       align-content: start;
     }
     .coffee-grid-carousel.is-animating .coffee-cell {
@@ -938,12 +943,18 @@
       box-shadow: 0 12px 32px rgba(var(--navy-rgb), 0.18);
     }
     .coffee-cell .label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 2.2em;
       font-size: 0.75rem;
       font-weight: 600;
+      line-height: 1.1;
       letter-spacing: 0.14em;
       text-transform: uppercase;
       color: rgba(var(--navy-rgb), 0.65);
       order: -1;
+      text-align: center;
     }
     .coffee-photo-ring {
       width: 100%;
@@ -1944,7 +1955,7 @@
       object-fit: cover;
     }
 
-    /* ─── MISSION (justified lines; flexible word gaps + fixed pill separators — mission-layout.js) ─── */
+    /* ─── MISSION (fixed art-directed lines + flexible image separators — mission-layout.js) ─── */
     .section-mission {
       --mission-pad-x: clamp(20px, 5vw, 64px);
       background: var(--green);
@@ -1965,13 +1976,11 @@
       text-align: center;
     }
     .mission-justified-root {
-      /* Shared pill size: shrinks on narrow viewports; all five slots use the same values. */
+      /* Shared pill size: shrinks on narrow viewports; all image slots use the same baseline. */
       --mission-pill-w: clamp(30px, 4.2vw + 10px, 76px);
-      --mission-pill-compact-w: clamp(70px, 15vw, 220px);
       --mission-pill-h: clamp(26px, 0.68em, 56px);
       /* Must match mission-layout.js (gapPx): ~0.14em between words / flex items. */
       --mission-inline-gap: 0.14em;
-      /* Floor for inter-word flex gaps so spacers never collapse (avoids words visually touching). */
       --mission-word-gap-min: max(4px, 0.14em);
       position: relative;
       font-family: 'Roboto Flex', 'Bebas Neue', sans-serif;
@@ -2023,7 +2032,8 @@
       min-width: 0;
     }
     .mission-line--words-only {
-      justify-content: flex-start;
+      justify-content: center;
+      gap: var(--mission-word-gap-min);
       flex-wrap: nowrap;
     }
     .mission-line--words-only .mission-w {
@@ -2031,26 +2041,22 @@
       max-width: 100%;
     }
     .mission-line--words-only .mission-line-spacer {
-      flex: 1 0 0;
+      flex: 0 0 var(--mission-word-gap-min);
       flex-shrink: 0;
-      min-width: var(--mission-word-gap-min);
       height: 1em;
       align-self: stretch;
     }
     .mission-line--has-pill {
-      column-gap: var(--mission-inline-gap);
+      gap: var(--mission-inline-gap);
       flex-wrap: nowrap;
     }
-    .mission-line--compact {
-      justify-content: center;
-    }
-    /* Runs share leftover line width; slack goes into .mission-w-gap (not only pill slots). */
+    /* In image lines, words keep natural spacing while image slots absorb the slack. */
     .mission-run {
       display: inline-flex;
       align-items: center;
-      flex: 1 1 0;
+      flex: 0 1 auto;
       min-width: min-content;
-      column-gap: 0;
+      gap: 0;
       flex-wrap: nowrap;
     }
     .mission-w {
@@ -2059,21 +2065,13 @@
       flex: 0 0 auto;
     }
     .mission-w-gap {
-      flex: 1 0 0;
-      flex-shrink: 0;
-      min-width: var(--mission-word-gap-min);
-      align-self: stretch;
-    }
-    .mission-line--compact .mission-line-spacer,
-    .mission-line--compact .mission-w-gap {
       flex: 0 0 var(--mission-word-gap-min);
-    }
-    .mission-line--compact .mission-run {
-      flex: 0 1 auto;
+      flex-shrink: 0;
+      align-self: stretch;
     }
     .mission-justified-root .mission-pill-slot.img-slot--pill {
       display: inline-flex;
-      /* Grow on the line so pills absorb extra width like justified gaps (min size unchanged). */
+      /* Grow on each line so visual strips fill the intentional empty spaces. */
       flex: 1 1 var(--mission-pill-w);
       flex-shrink: 0;
       align-self: center;
@@ -2099,12 +2097,6 @@
         inset 0 -12px 28px rgba(var(--navy-rgb), 0.22);
       overflow: hidden;
     }
-    .mission-line--compact .mission-pill-slot.img-slot--pill {
-      flex: 0 1 var(--mission-pill-compact-w);
-      width: var(--mission-pill-compact-w);
-      min-width: var(--mission-pill-w);
-      max-width: var(--mission-pill-compact-w);
-    }
     /* Photo fill inside mission pills; landscape crop reads well in horizontal slots */
     .mission-justified-root .mission-pill-slot .mission-pill-img {
       display: block;
@@ -2126,6 +2118,40 @@
       max-width: min(1240px, 100%);
       margin: 0 auto;
       text-wrap: balance;
+    }
+    .mission-justified-root[data-mission-layout="mobile"] {
+      align-items: stretch;
+      line-height: 1.03;
+      letter-spacing: 0.055em;
+    }
+    .mission-justified-root[data-mission-layout="mobile"] .mission-line--words-only {
+      justify-content: center;
+      gap: var(--mission-word-gap-min);
+    }
+    @media (max-width: 700px) {
+      .section-mission {
+        --mission-pad-x: clamp(16px, 6vw, 28px);
+        padding-top: 0;
+        padding-bottom: 0;
+      }
+      .mission-quote-shell {
+        justify-content: flex-start;
+        min-height: calc(100svh - var(--nav-height, 76px));
+        padding-top: clamp(96px, 15svh, 132px);
+        padding-bottom: clamp(24px, 4svh, 48px);
+      }
+      .mission-justified-root {
+        --mission-pill-w: clamp(42px, 14vw, 86px);
+        --mission-pill-h: clamp(20px, 0.54em, 32px);
+        flex: 1 1 auto;
+        justify-content: space-between;
+        gap: clamp(0.08em, 0.9svh, 0.34em);
+        min-height: 0;
+      }
+      .mission-justified-root[data-mission-layout="mobile"] {
+        line-height: 0.98;
+        letter-spacing: 0.045em;
+      }
     }
     .section-roasting {
       background: var(--green-deep);
@@ -2486,7 +2512,8 @@
         --drink-carousel-grid-width: calc(100% - 60px);
       }
       .coffee-grid-carousel {
-        min-height: 0;
+        --drink-carousel-card-size: min(180px, calc((var(--drink-carousel-grid-width) - var(--coffee-grid-col-gap)) / 2));
+        min-height: calc(var(--drink-carousel-row-height) + var(--drink-carousel-row-height) + var(--coffee-grid-row-gap));
       }
       .drink-carousel-controls {
         flex-wrap: wrap;

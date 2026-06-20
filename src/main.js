@@ -76,13 +76,22 @@ function hydrateDrinkCarousel() {
   const prev = document.querySelector('[data-drink-carousel-prev]');
   const next = document.querySelector('[data-drink-carousel-next]');
   const status = document.querySelector('[data-drink-carousel-status]');
-  const pageSize = 9;
-  const pageCount = Math.ceil(DRINKS.length / pageSize);
+  const mobileCarouselMedia = window.matchMedia?.('(max-width: 560px)');
+  const getPageSize = () => (mobileCarouselMedia?.matches ? 4 : 9);
   const autoplayDelay = 3600;
+  let pageSize = getPageSize();
+  let pageCount = Math.ceil(DRINKS.length / pageSize);
   let page = 0;
   let autoplayTimer;
 
+  const updatePageMetrics = () => {
+    pageSize = getPageSize();
+    pageCount = Math.ceil(DRINKS.length / pageSize);
+    page = Math.min(page, pageCount - 1);
+  };
+
   const renderPage = (direction = 'next') => {
+    updatePageMetrics();
     grid.classList.remove('is-animating', 'is-animating-next', 'is-animating-prev');
     grid.innerHTML = '';
     const start = page * pageSize;
@@ -132,6 +141,13 @@ function hydrateDrinkCarousel() {
   carousel?.addEventListener('mouseleave', startAutoplay);
   carousel?.addEventListener('focusin', stopAutoplay);
   carousel?.addEventListener('focusout', startAutoplay);
+  mobileCarouselMedia?.addEventListener('change', () => {
+    const firstVisibleItem = page * pageSize;
+    updatePageMetrics();
+    page = Math.min(Math.floor(firstVisibleItem / pageSize), pageCount - 1);
+    renderPage();
+    restartAutoplay();
+  });
 
   renderPage();
   startAutoplay();

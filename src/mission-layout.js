@@ -1,7 +1,6 @@
 /**
- * Greedy line-breaking for the mission block; inter-word gaps (.mission-w-gap) flex to
- * absorb slack per line. Line breaks are calculated against the desktop reference
- * width so narrow screens keep the same composition and only scale the type down.
+ * Fixed art-directed line maps for the mission block. Resize only changes scale:
+ * words do not reflow between lines inside the desktop or mobile states.
  */
 
 /** Landscape-friendly Unsplash CDN URLs (beans, cups, brewing) — IDs verified to respond 200. */
@@ -17,41 +16,70 @@ const COFFEE_IMAGE_URLS = [
   'https://images.unsplash.com/photo-1517487881594-2787fef5ebf7?auto=format&fit=crop&w=720&q=80',
 ];
 
-const MISSION_PHRASES = [
-  'Seçkin Arabica çekirdekleri',
-  've taze öğütülmüş baharatlar',
-  'ile inkâr edilemez',
-  'derecede yoğun,',
-  'aromatik bir kahve deneyimine',
-  'ne dersiniz?',
+const MISSION_WORDS = [
+  'Seçkin',
+  'Arabica',
+  'çekirdekleri',
+  've',
+  'taze',
+  'öğütülmüş',
+  'baharatlar',
+  'ile',
+  'inkâr',
+  'edilemez',
+  'derecede',
+  'yoğun,',
+  'aromatik',
+  'bir',
+  'kahve',
+  'deneyimine',
+  'ne',
+  'dersiniz?',
 ];
 
-export const MISSION_ARIA_LABEL = MISSION_PHRASES.join(' ');
+export const MISSION_ARIA_LABEL = MISSION_WORDS.join(' ');
 
-const COMPACT_LINE_FILL_THRESHOLD = 0.76;
-const DESKTOP_LAYOUT_WIDTH = 1240;
 const DESKTOP_FONT_REM = 3.55;
 const NATURAL_FONT_MIN_REM = 1.45;
 const NATURAL_FONT_FLUID_VW = 3.4;
 const NATURAL_FONT_FLUID_REM = 0.75;
-const DESKTOP_PILL_MIN_PX = 76;
+const MOBILE_FONT_MIN_REM = 1.75;
+const MOBILE_FONT_FLUID_VW = 5.6;
+const MOBILE_FONT_FLUID_REM = 0.45;
+const MOBILE_FONT_MAX_REM = 2.85;
 const MIN_FITTED_FONT_PX = 8;
+const MOBILE_QUERY = '(max-width: 700px)';
+
+const pill = { type: 'pill' };
+const words = (...items) => items.map((text) => ({ type: 'word', text }));
+
+const DESKTOP_LINES = [
+  [...words('Seçkin'), pill, ...words('Arabica'), pill, ...words('çekirdekleri')],
+  [...words('ve', 'taze'), pill, ...words('öğütülmüş')],
+  [...words('baharatlar'), pill, ...words('ile', 'inkâr')],
+  [...words('edilemez'), pill, ...words('derecede', 'yoğun,'), pill],
+  [...words('aromatik'), pill, ...words('bir'), pill, ...words('kahve')],
+  [...words('deneyimine'), pill, ...words('ne', 'dersiniz?')],
+];
+
+const MOBILE_LINES = [
+  [...words('Seçkin'), pill, ...words('Arabica')],
+  [...words('çekirdekleri'), pill],
+  [...words('ve'), pill, ...words('taze')],
+  [...words('öğütülmüş'), pill],
+  [...words('baharatlar'), pill],
+  [...words('ile'), pill, ...words('inkâr')],
+  [...words('edilemez'), pill],
+  [...words('derecede'), pill],
+  [...words('yoğun,'), pill],
+  [...words('aromatik'), pill],
+  [...words('bir'), pill, ...words('kahve')],
+  [...words('deneyimine'), pill],
+  [...words('ne'), pill, ...words('dersiniz?')],
+];
 
 function coffeeImageAtPillIndex(index) {
   return COFFEE_IMAGE_URLS[index % COFFEE_IMAGE_URLS.length];
-}
-
-function tokenize(phrases) {
-  const tokens = [];
-  phrases.forEach((phrase, idx) => {
-    if (idx > 0) tokens.push({ type: 'pill' });
-    phrase
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean)
-      .forEach((text) => tokens.push({ type: 'word', text }));
-  });
-  return tokens;
 }
 
 function measureWordWidth(probe, word) {
@@ -83,15 +111,19 @@ function clampNumber(value, min, max) {
 
 function naturalMissionFontSizePx() {
   const rem = rootFontSizePx();
+  if (currentLineMap() === MOBILE_LINES) {
+    return clampNumber(
+      window.innerWidth * (MOBILE_FONT_FLUID_VW / 100) + MOBILE_FONT_FLUID_REM * rem,
+      MOBILE_FONT_MIN_REM * rem,
+      MOBILE_FONT_MAX_REM * rem,
+    );
+  }
+
   return clampNumber(
     window.innerWidth * (NATURAL_FONT_FLUID_VW / 100) + NATURAL_FONT_FLUID_REM * rem,
     NATURAL_FONT_MIN_REM * rem,
     DESKTOP_FONT_REM * rem,
   );
-}
-
-function desktopMissionFontSizePx() {
-  return DESKTOP_FONT_REM * rootFontSizePx();
 }
 
 function syncProbeFont(probe, cs, fontSizePx = undefined) {
@@ -101,33 +133,8 @@ function syncProbeFont(probe, cs, fontSizePx = undefined) {
   if (fontSizePx !== undefined) probe.style.fontSize = `${fontSizePx}px`;
 }
 
-function breakIntoLines(tokens, availW, gapPx, pillMinPx, probe) {
-  const lines = [];
-  let cur = [];
-  let lineW = 0;
-
-  const flush = () => {
-    if (cur.length) lines.push([...cur]);
-    cur = [];
-    lineW = 0;
-  };
-
-  for (const tok of tokens) {
-    if (tok.type === 'word') {
-      const w = measureWordWidth(probe, tok.text);
-      const add = w + (cur.length ? gapPx : 0);
-      if (lineW + add > availW + 0.5 && cur.length) flush();
-      lineW += w + (cur.length ? gapPx : 0);
-      cur.push(tok);
-    } else {
-      const add = pillMinPx + (cur.length ? gapPx : 0);
-      if (lineW + add > availW + 0.5 && cur.length) flush();
-      lineW += pillMinPx + (cur.length ? gapPx : 0);
-      cur.push(tok);
-    }
-  }
-  flush();
-  return lines;
+function currentLineMap() {
+  return window.matchMedia?.(MOBILE_QUERY).matches ? MOBILE_LINES : DESKTOP_LINES;
 }
 
 function makePill(imageUrl) {
@@ -146,13 +153,12 @@ function makePill(imageUrl) {
   return p;
 }
 
-function renderLine(lineToks, pillPick, compact = false) {
+function renderLine(lineToks, pillPick) {
   const hasPill = lineToks.some((t) => t.type === 'pill');
   const row = document.createElement('div');
   row.className = [
     'mission-line',
     hasPill ? 'mission-line--has-pill' : 'mission-line--words-only',
-    compact ? 'mission-line--compact' : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -229,20 +235,13 @@ export function layoutMissionBlock(container) {
   const availW = Math.max(0, container.clientWidth - 2);
   if (availW < 40) return;
 
+  const lines = currentLineMap();
+  container.dataset.missionLayout = lines === MOBILE_LINES ? 'mobile' : 'desktop';
+
   const naturalFontSize = naturalMissionFontSizePx();
   container.style.fontSize = `${naturalFontSize}px`;
 
   let cs = getComputedStyle(container);
-  const desktopFontSize = desktopMissionFontSizePx();
-  const desktopGapPx = Math.max(4, desktopFontSize * 0.14);
-  syncProbeFont(probe, cs, desktopFontSize);
-
-  const tokens = tokenize(MISSION_PHRASES);
-  const lines = breakIntoLines(tokens, DESKTOP_LAYOUT_WIDTH, desktopGapPx, DESKTOP_PILL_MIN_PX, probe);
-  const compactByLine = lines.map(
-    (row) => measureLineWidth(row, desktopGapPx, DESKTOP_PILL_MIN_PX, probe) / DESKTOP_LAYOUT_WIDTH < COMPACT_LINE_FILL_THRESHOLD,
-  );
-
   syncProbeFont(probe, cs);
   let fontSize = naturalFontSize;
   let gapPx = Math.max(4, fontSize * 0.14);
@@ -277,14 +276,14 @@ export function layoutMissionBlock(container) {
     );
   }
 
-  /** Clear user nodes but keep measurement probes (re-append after layout). */
+  /** Clear rendered nodes but keep measurement probes for the next layout pass. */
   container
     .querySelectorAll(':scope > *:not(.mission-measure-probe):not(.mission-pill-size-probe)')
     .forEach((el) => el.remove());
 
   const pillPick = { i: 0 };
-  lines.forEach((row, index) => {
-    container.appendChild(renderLine(row, pillPick, compactByLine[index]));
+  lines.forEach((row) => {
+    container.appendChild(renderLine(row, pillPick));
   });
 
   if (!container.contains(probe)) container.appendChild(probe);
