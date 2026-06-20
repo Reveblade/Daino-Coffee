@@ -873,12 +873,13 @@
       white-space: nowrap;
     }
     .coffee-grid-carousel {
-      --drink-carousel-card-size: min(180px, calc((var(--drink-carousel-grid-width) - var(--coffee-grid-col-gap) - var(--coffee-grid-col-gap)) / 3));
-      --drink-carousel-label-height: 2.2em;
-      --drink-carousel-row-height: calc(var(--drink-carousel-card-size) + 10px + var(--drink-carousel-label-height));
       max-width: var(--drink-carousel-grid-width);
-      min-height: calc(var(--drink-carousel-row-height) + var(--drink-carousel-row-height) + var(--drink-carousel-row-height) + var(--coffee-grid-row-gap) + var(--coffee-grid-row-gap));
+      min-height: clamp(560px, 72vw, 692px);
       align-content: start;
+    }
+    .coffee-cell-placeholder {
+      visibility: hidden;
+      pointer-events: none;
     }
     .coffee-grid-carousel.is-animating .coffee-cell {
       animation: drink-carousel-cell-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -2512,8 +2513,7 @@
         --drink-carousel-grid-width: calc(100% - 60px);
       }
       .coffee-grid-carousel {
-        --drink-carousel-card-size: min(180px, calc((var(--drink-carousel-grid-width) - var(--coffee-grid-col-gap)) / 2));
-        min-height: calc(var(--drink-carousel-row-height) + var(--drink-carousel-row-height) + var(--coffee-grid-row-gap));
+        min-height: 0;
       }
       .drink-carousel-controls {
         flex-wrap: wrap;

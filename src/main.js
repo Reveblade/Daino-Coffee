@@ -68,6 +68,22 @@ function createDrinkCard(drink) {
   return card;
 }
 
+function createDrinkPlaceholder() {
+  const card = document.createElement('div');
+  card.className = 'coffee-cell coffee-cell-placeholder';
+  card.setAttribute('aria-hidden', 'true');
+
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = '\u00a0';
+
+  const ring = document.createElement('div');
+  ring.className = 'coffee-photo-ring';
+
+  card.append(label, ring);
+  return card;
+}
+
 function hydrateDrinkCarousel() {
   const grid = document.querySelector('[data-drink-carousel-grid]');
   if (!grid) return;
@@ -77,7 +93,7 @@ function hydrateDrinkCarousel() {
   const next = document.querySelector('[data-drink-carousel-next]');
   const status = document.querySelector('[data-drink-carousel-status]');
   const mobileCarouselMedia = window.matchMedia?.('(max-width: 560px)');
-  const getPageSize = () => (mobileCarouselMedia?.matches ? 4 : 9);
+  const getPageSize = () => (mobileCarouselMedia?.matches ? 6 : 9);
   const autoplayDelay = 3600;
   let pageSize = getPageSize();
   let pageCount = Math.ceil(DRINKS.length / pageSize);
@@ -97,6 +113,9 @@ function hydrateDrinkCarousel() {
     const start = page * pageSize;
     const visible = DRINKS.slice(start, start + pageSize);
     visible.forEach((drink) => grid.append(createDrinkCard(drink)));
+    for (let i = visible.length; i < pageSize; i += 1) {
+      grid.append(createDrinkPlaceholder());
+    }
     if (status) status.textContent = `${page + 1} / ${pageCount}`;
 
     if (!prefersReducedMotion()) {
