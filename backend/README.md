@@ -1,0 +1,158 @@
+# Daino Coffee — Backend API
+
+Repository: [github.com/Daino-Coffee/backend](https://github.com/Daino-Coffee/backend)
+
+NestJS **REST API** (`/v1`) for the Daino Coffee stack: **MongoDB**, **JWT** auth, **Netgsm** OTP SMS for Turkish mobiles (`+90` / `5…`), **Cloudinary** for category/product images and optional table **QR** PNGs, and full **order** workflows (in-place via table QR vs online delivery).
+
+---
+
+## What it does
+
+| Area | Capability |
+|------|----------------|
+| **Auth** | SMS OTP (`/auth/otp/*`); owner password login (`/auth/owner/login`); JWT access tokens |
+| **Users** | Roles `ADMIN_OWNER`, `ADMIN`, `CASHIER`, `COURIER`, `CUSTOMER`; customer addresses & favorites; admin staff CRUD |
+| **Shop** | `serviceEnabled` flag — when off, table QR menus must not take orders (self-service); table **0** is always display-only |
+| **Tables** | Opaque public slugs, menu URLs, optional Cloudinary QR image; admin CRUD + regenerate QR |
+| **Menu** | Nested categories, products (price in kuruş), availability toggle; public `GET /menu` |
+| **Orders** | **IN_PLACE** and **ONLINE** channels, status machines, embedded `history`, cashier assign courier, POS vs cash settlement rules |
+| **Courier** | Current job, start delivery, deliver with `CASH` / `POS`, history |
+| **Uploads** | `POST /admin/uploads/image` (Cloudinary) |
+
+---
+
+## Requirements
+
+- **Node.js** 20+
+- **MongoDB** 6+ (local, Docker, or Atlas)
+
+---
+
+## Clone & install
+
+```bash
+git clone https://github.com/Daino-Coffee/backend.git
+cd backend
+npm install
+cp .env.example .env   # then edit .env
+```
+
+---
+
+## Configure
+
+Copy [`.env.example`](.env.example) to `.env`. Minimum:
+
+- `MONGODB_URI`, `JWT_SECRET` (≥16 chars), `MENU_PUBLIC_BASE_URL`
+- `OWNER_PHONE_E164`, `OWNER_PASSWORD` (seeds immutable **ADMIN_OWNER** on boot)
+- `NETGSM_*` for production OTP SMS, or `NETGSM_OTP_DISABLED=true` for local dev (OTP logged)
+- `CLOUDINARY_*` optional (QR/menu uploads degrade gracefully if unset)
+
+| Variable | Purpose |
+|----------|---------|
+| `MONGODB_URI` | Mongo connection string |
+| `JWT_SECRET` / `JWT_EXPIRES_IN` | Signing & TTL |
+| `CORS_ORIGINS` | Comma-separated browser origins (e.g. Vite dev servers) or `*` |
+| `MENU_PUBLIC_BASE_URL` | Base URL embedded in table QR links |
+| `OWNER_*` | Owner phone (`555…`, `0555…`, `+90555…`, etc. → stored `+905…`) + password (hashed on bootstrap) |
+| `NETGSM_*` | Netgsm OTP SMS (`api.netgsm.com.tr` REST v2) |
+| `CLOUDINARY_*` | Image uploads |
+
+---
+
+## Run (development)
+
+```bash
+# optional local Mongo
+docker compose up -d
+
+npm run start:dev
+```
+
+- Health: `GET http://localhost:3000/healthz` (no `/v1` prefix).
+- All business routes: **`/v1/...`**.
+
+### Orders WebSocket (staff)
+
+The **authority** staff app connects to **`ws(s)://<host>/ws/orders?token=<access_jwt>`** (same upgrade headers as nginx below). Only roles **ADMIN_OWNER**, **ADMIN**, **CASHIER**, and **COURIER** are accepted; the server pushes `{ "type": "orders" }` when any order is created or updated so the UI can refetch `GET /v1/orders` (or courier endpoints). Browsers cannot set `Authorization` on `WebSocket`, so the access token is passed as a query parameter (avoid logging full URLs).
+
+### Store WebSocket (native)
+
+The ordering app can open **`ws://localhost:3000/ws/store`** (or **`wss://`** when the API is served over HTTPS). This path is **not** under `/v1`. The server pushes small JSON messages such as `{ "type": "menu" }` or `{ "type": "shop" }` after admin menu changes or shop service toggles.
+
+If the API is behind **nginx** (or another reverse proxy), allow WebSocket upgrades on that location:
+
+```nginx
+proxy_http_version 1.1;
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";
+```
+
+---
+
+## Build (production)
+
+```bash
+npm run build
+npm run start:prod
+```
+
+Compiles TypeScript to `dist/` and runs `node dist/main.js`. Set `NODE_ENV=production` and a real `MONGODB_URI` / secrets in your host or container environment.
+
+---
+
+## API overview
+
+- **Customers / staff (non-owner):** `POST /v1/auth/otp/request` → `POST /v1/auth/otp/verify`. First OTP on a new phone creates a **CUSTOMER**. Staff phones must exist (created by admin) before OTP sign-in.
+- **Owner:** `POST /v1/auth/owner/login` — no SMS.
+
+Phones on auth and admin staff endpoints normalize to **E.164** `+905xxxxxxxx` from plain `5…`, `05…`, `90…`, `+90…`, or spaced / dashed input. `OWNER_PHONE_E164` in `.env` accepts the same shapes.
+
+### Route map (summary)
+
+| Area | Routes |
+|------|--------|
+| Health | `GET /healthz` |
+| Realtime | WebSocket `ws(s)://<host>/ws/store` (public menu/shop); `ws(s)://<host>/ws/orders?token=<JWT>` (staff order list push) |
+| Auth | `POST /v1/auth/otp/request`, `otp/verify`, `owner/login` |
+| Users | `GET /v1/users/me`, addresses, favorites |
+| Admin | `GET/POST/DELETE /v1/admin/staff`, `GET /v1/admin/couriers` |
+| Shop | `GET/PATCH /v1/shop/settings` |
+| Tables | `GET /v1/tables/public/:slug`, admin CRUD + `regenerate-qr` |
+| Menu | `GET /v1/menu`, admin categories/products CRUD |
+| Uploads | `POST /v1/admin/uploads/image` |
+| Orders | `POST /v1/orders/in-place`, `online`, `GET /v1/orders`, transitions, `assign-courier` |
+| Courier | `GET /v1/courier/orders/current`, `history`, `start-delivery`, `deliver` |
+
+---
+
+## Netgsm (OTP SMS)
+
+OTP SMS is sent with the official [`@netgsm/sms`](https://www.npmjs.com/package/@netgsm/sms) client: **`POST`** `https://api.netgsm.com.tr/sms/rest/v2/otp` (JSON, Basic auth). Set **`NETGSM_USERNAME`** / **`NETGSM_PASSWORD`** (API user in the Netgsm panel), **`NETGSM_MSGHEADER`** (onaylı SMS başlığı), and an active **OTP SMS** package. **`NETGSM_APPNAME`** is optional (matches Netgsm “appname” / SDK tracking). Use **ASCII** text in the template (Netgsm OTP does not support Turkish characters in the OTP product). If Netgsm is **not** configured (`NETGSM_OTP_DISABLED=true` or any of the three creds missing), no SMS is sent; in **`NODE_ENV` ≠ `production`**, the backend prints **`[OTP] +905… code=…`** at **log** level so you can complete OTP locally. In production without Netgsm, the code is **not** printed (configure Netgsm or use another path).
+
+---
+
+## Tests
+
+```bash
+npm test          # unit (phone helpers)
+npm run test:e2e  # MongoDB in-memory: health, owner login, shop settings
+```
+
+---
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `npm run start:dev` | Nest watch mode |
+| `npm run build` | `nest build` → `dist/` |
+| `npm run start:prod` | Run compiled app |
+| `npm run lint` | ESLint |
+
+---
+
+## Related repositories
+
+- [frontend](https://github.com/Daino-Coffee/frontend) — marketing site + customer ordering UI
+- [authority](https://github.com/Daino-Coffee/authority) — staff panel (admin / cashier / courier)
