@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="tr" class="page-loader-locked">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DAINO — Hemen Sipariş Ver</title>
+  <style>
+    html.page-loader-locked,
+    html.page-loader-locked body {
+      overflow: hidden;
+      height: 100%;
+    }
+
+    #page-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483646;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(16px, 3vw, 28px);
+      padding: 24px;
+      background: #142838;
+    }
+
+    #page-loader .page-loader-ring {
+      width: min(160px, 40vw);
+      height: min(160px, 40vw);
+      border-radius: 50%;
+      border: 2px solid rgba(245, 245, 220, 0.12);
+      border-top-color: rgba(245, 245, 220, 0.55);
+      animation: page-loader-spin 0.95s linear infinite;
+    }
+
+    @keyframes page-loader-spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700&family=Dancing+Script:wght@500;600&family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,800..1000&display=swap"
+    rel="stylesheet">
+</head>
+
+<body>
+
+  <div id="page-loader" class="page-loader" role="status" aria-live="polite" aria-busy="true"
+    aria-label="Sayfa yükleniyor">
+    <div class="page-loader-mark">
+      <div class="page-loader-ring" aria-hidden="true"></div>
+      <div class="page-loader-deer" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <nav>
+    <a href="#top" class="nav-brand"><span class="nav-brand-logo" aria-hidden="true"></span>DAINO</a>
+    <ul class="nav-links">
+      <li><a href="#top">Ana Sayfa</a></li>
+      <li><a href="#coffee">Kahve</a></li>
+      <li><a href="/anket.html">Anket</a></li>
+      <li><a href="#ekipman">Ekipman</a></li>
+      <li><a href="#mission">Hikaye</a></li>
+      <li><a href="/iletisim.html">İletişim</a></li>
+      <li><a href="/siparis">Menü</a></li>
+    </ul>
+    <div class="nav-actions">
+      <a href="/siparis/hesap" class="nav-cta" data-customer-auth-cta>HEMEN SİPARİŞ VER</a>
+      <button class="nav-hamburger" type="button" aria-label="Menü" id="hamburger">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </nav>
+  <div class="nav-mobile-menu" id="mobileMenu">
+    <a href="#top">Ana Sayfa</a>
+    <a href="#coffee">Kahve</a>
+    <a href="/anket.html">Anket</a>
+    <a href="#ekipman">Ekipman</a>
+    <a href="#mission">Hikaye</a>
+    <a href="/iletisim.html">İletişim</a>
+    <a href="/siparis" class="nav-mobile-menu-link">Menü</a>
+  </div>
+
+  <section class="hero" id="top">
+    <div class="hero-inner">
+      <div class="hero-head">
+        <p class="hero-script"><span class="emoji-accent" aria-hidden="true">☕</span> Coffee & Bakery <span
+            class="emoji-accent" aria-hidden="true">🥐</span></p>
+      </div>
+
+      <div class="hero-stage">
+        <h1 class="hero-title">
+          <a class="hero-title-link" href="/anket.html" aria-label="Favori kahveni keşfet anketini aç">
+          <span class="hero-title-line">FAVORİ KAHVENİ</span>
+          <span class="hero-title-line">KEŞFET</span>
+          </a>
+        </h1>
+
+        <div class="hero-glass-wrap">
+          <div class="hero-glass-stack">
+            <div class="hero-glass-photo">
+              <div class="diag-band diag-band--a diag-band--back hero-band" aria-hidden="true">
+                <div class="diag-marquee">
+                  <span>AMERICANO</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>RISTRETTO</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>GALAO</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>LATTE</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>AMERICANO</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>RISTRETTO</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>GALAO</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>LATTE</span><span class="diag-dot" aria-hidden="true"></span>
+                </div>
+              </div>
+              <img class="hero-glass-img" src="" alt="Buzlu kahve, uzun bardak" width="400" height="600"
+                decoding="async" fetchpriority="high">
+              <div class="diag-band diag-band--b diag-band--front hero-band" aria-hidden="true">
+                <div class="diag-marquee">
+                  <span>CORTADO</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>CAPPUCCINO</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>MACCHIATO</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>FLAT WHITE</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>CORTADO</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>CAPPUCCINO</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>MACCHIATO</span><span class="diag-dot" aria-hidden="true"></span>
+                  <span>FLAT WHITE</span><span class="diag-dot" aria-hidden="true"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="post-hero-tagline" aria-label="Öne çıkan mesajlar">
+    <div class="post-hero-tagline-inner">
+      <p class="post-hero-tagline-left"><span class="emoji-accent" aria-hidden="true">🌿</span> Saf kahve, saf topluluk, saf deneyim — hayatında fazla kahve diye bir şey
+        yoktur.</p>
+      <p class="post-hero-tagline-right">Çekirdeklerimizi yakından tanıyın; ülkenin dört bir yanındaki mahallelerde en
+        iyi kahveyi
+        sunmak için güvendiğiniz adres. <span class="emoji-accent" aria-hidden="true">🫘</span></p>
+    </div>
+  </section>
+
+  <section class="section-coffee" id="coffee">
+    <header class="coffee-header">
+      <h2 class="section-heading font-display">Kahvelerimiz</h2>
+      <p class="coffee-section-lead">Kahveden ferah içeceklere uzanan seçkimizi keşfedin; damak zevkinize en yakın favoriyi bulun.</p>
+    </header>
+    <div class="drink-carousel" aria-label="İçecek carousel">
+      <button type="button" class="drink-carousel-btn drink-carousel-btn--prev" data-drink-carousel-prev aria-label="Önceki içecekler">
+        <i class="ph ph-caret-left" aria-hidden="true"></i>
+      </button>
+      <span class="drink-carousel-status" data-drink-carousel-status aria-live="polite">1 / 1</span>
+      <div class="coffee-grid coffee-grid-carousel" data-drink-carousel-grid></div>
+      <button type="button" class="drink-carousel-btn drink-carousel-btn--next" data-drink-carousel-next aria-label="Sonraki içecekler">
+        <i class="ph ph-caret-right" aria-hidden="true"></i>
+      </button>
+    </div>
+  </section>
+
+  <section class="section-ekipman" id="ekipman" aria-labelledby="ekipman-heading">
+    <div class="coffee-showcase-stack">
+      <header class="coffee-header">
+        <h2 id="ekipman-heading" class="section-heading font-display">Ekipman</h2>
+      </header>
+      <p class="section-ekipman-lead">Baristanın tezgâhında gördüğünüz profesyonel araçlar: espresso, öğütme, filtre
+        demleme ve süt hazırlığı için seçtiğimiz ekipman ailesi.</p>
+    </div>
+    <div class="coffee-grid" role="list">
+      <a href="/ekipman/espresso-makinesi.html" class="coffee-cell coffee-cell-link" role="listitem">
+        <span class="label">Espresso makinesi</span>
+        <div class="coffee-photo-ring">
+          <img src="https://images.unsplash.com/photo-1461988091159-192b6df7054f?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Stüdyo ışığında profesyonel espresso makinesi" width="800" height="800" decoding="async" loading="lazy">
+        </div>
+      </a>
+      <a href="/ekipman/kahve-ogutucusu.html" class="coffee-cell coffee-cell-link" role="listitem">
+        <span class="label">Kahve öğütücüsü</span>
+        <div class="coffee-photo-ring">
+          <img src="https://images.unsplash.com/photo-1633276023326-4fae3e8ba556?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Çekirdek dolu profesyonel kahve öğütücüsü" width="800" height="800" decoding="async" loading="lazy">
+        </div>
+      </a>
+      <a href="/ekipman/filtre-demleme.html" class="coffee-cell coffee-cell-link" role="listitem">
+        <span class="label">Filtre demleme</span>
+        <div class="coffee-photo-ring">
+          <img src="https://images.unsplash.com/photo-1780341219526-a1b2ff5bbfda?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Dijital tartı üzerinde filtre kahve demleme ekipmanı" width="800" height="800" decoding="async" loading="lazy">
+        </div>
+      </a>
+      <a href="/ekipman/ince-uclu-kettle.html" class="coffee-cell coffee-cell-link" role="listitem">
+        <span class="label">İnce uçlu kettle</span>
+        <div class="coffee-photo-ring">
+          <img src="https://images.unsplash.com/photo-1774294536061-1a5dd16437d2?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="İnce uçlu kettle ile kontrollü pour-over demleme" width="800" height="800" decoding="async" loading="lazy">
+        </div>
+      </a>
+      <a href="/ekipman/sut-ve-pitcher.html" class="coffee-cell coffee-cell-link" role="listitem">
+        <span class="label">Süt &amp; pitcher</span>
+        <div class="coffee-photo-ring">
+          <img src="https://images.unsplash.com/photo-1599549192669-6baac5d32432?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Barista elinde paslanmaz çelik süt pitcher'ı" width="800" height="800" decoding="async" loading="lazy">
+        </div>
+      </a>
+      <a href="/ekipman/dijital-tarti.html" class="coffee-cell coffee-cell-link" role="listitem">
+        <span class="label">Dijital tartı</span>
+        <div class="coffee-photo-ring">
+          <img src="https://images.unsplash.com/photo-1753091122032-ddfb454849cc?auto=format&amp;fit=crop&amp;w=800&amp;q=80"
+            alt="Kahve çekirdeklerini ölçen dijital barista tartısı" width="800" height="800" decoding="async" loading="lazy">
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <section class="section-mission" id="mission">
+    <div class="mission-quote-shell">
+      <div class="mission-justified mission-justified-root" id="missionJustified"></div>
+      <noscript>
+        <p class="mission-noscript">Seçkin Arabica çekirdekleri ve taze öğütülmüş baharatlar ile inkâr edilemez derecede
+          yoğun, aromatik bir kahve deneyimine ne dersiniz?</p>
+      </noscript>
+    </div>
+
+    <section class="section-roasting" aria-labelledby="roasting-heading">
+      <div class="roasting-content-shell">
+        <h2 class="roasting-head font-display" id="roasting-heading">KAHVENİZİ NASIL İSTERSİNİZ? <span
+            class="emoji-accent roasting-heading-emoji" aria-hidden="true">&#x2615;</span></h2>
+        <div class="roast-list-wrap">
+          <div class="roast-list" id="roastList">
+            <div class="roast-item" data-roast="light">
+              <span class="roast-label"><span class="emoji-accent roast-emoji" aria-hidden="true">🌼</span> Hafif kavrulmuş</span>
+              <div class="roast-right">
+                <div class="roast-slot"></div>
+              </div>
+              <p class="roast-expand">Parlak asidite ve zarif köken karakteri. Çekirdeğin terroirini hissetmek için
+                ideal.
+              </p>
+            </div>
+            <div class="roast-item" data-roast="medium">
+              <span class="roast-label"><span class="emoji-accent roast-emoji" aria-hidden="true">🍯</span> Orta kavrulmuş</span>
+              <div class="roast-right">
+                <div class="roast-slot"></div>
+              </div>
+              <p class="roast-expand">Dengeli gövde, karamel tatlılığı ve temiz bir final. Günlük kahvenin tatlı
+                noktası.
+              </p>
+            </div>
+            <div class="roast-item" data-roast="medium-dark">
+              <span class="roast-label"><span class="emoji-accent roast-emoji" aria-hidden="true">🍫</span> Orta-koyu kavrulmuş</span>
+              <div class="roast-right">
+                <div class="roast-slot"></div>
+              </div>
+              <p class="roast-expand">Güçlü gövde, çikolata ve baharat notaları, düşük asidite. Espresso ve sütlü
+                içecekler
+                için uygun.</p>
+            </div>
+            <div class="roast-item" data-roast="dark">
+              <span class="roast-label"><span class="emoji-accent roast-emoji" aria-hidden="true">🔥</span> Koyu kavrulmuş</span>
+              <div class="roast-right">
+                <div class="roast-slot"></div>
+              </div>
+              <p class="roast-expand">Dumanlı yoğunluk ve ağır bir ağız hissi. İkinci çatırtının eşiğine kadar kavrulur.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <div class="order-wrap">
+    <div class="diag-band diag-band--a order-band order-band--a" aria-hidden="true">
+      <div class="diag-marquee">
+        <span>ŞİMDİ SİPARİŞ VER</span><span class="diag-dot" aria-hidden="true"></span>
+        <span>ŞİMDİ SİPARİŞ VER</span><span class="diag-dot" aria-hidden="true"></span>
+        <span>ŞİMDİ SİPARİŞ VER</span><span class="diag-dot" aria-hidden="true"></span>
+        <span>ŞİMDİ SİPARİŞ VER</span><span class="diag-dot" aria-hidden="true"></span>
+        <span>ŞİMDİ SİPARİŞ VER</span><span class="diag-dot" aria-hidden="true"></span>
+        <span>ŞİMDİ SİPARİŞ VER</span><span class="diag-dot" aria-hidden="true"></span>
+      </div>
+    </div>
+    <div class="diag-band diag-band--b order-band order-band--b" aria-hidden="true">
+      <div class="diag-marquee">
+        <span>ŞİMDİ SİPARİŞ VER</span><span class="diag-dot" aria-hidden="true"></span>
+        <span>ŞİMDİ SİPARİŞ VER</span><span class="diag-dot" aria-hidden="true"></span>
+        <span>ŞİMDİ SİPARİŞ VER</span><span class="diag-dot" aria-hidden="true"></span>
+        <span>ŞİMDİ SİPARİŞ VER</span><span class="diag-dot" aria-hidden="true"></span>
+        <span>ŞİMDİ SİPARİŞ VER</span><span class="diag-dot" aria-hidden="true"></span>
+        <span>ŞİMDİ SİPARİŞ VER</span><span class="diag-dot" aria-hidden="true"></span>
+      </div>
+    </div>
+
+    <section class="order-inner" id="order">
+      <button type="button" class="order-title order-title-button font-display" data-customer-auth-cta>
+        Şimdi<br>sipariş ver
+      </button>
+      <div class="order-kahve-clip" aria-hidden="true">
+        <div class="order-kahve-fig"></div>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <span class="site-footer-copy">© 2026 DAINO. Tüm hakları saklıdır.</span>
+      <span class="site-footer-made">
+        <a href="https://reveblade.com" target="_blank" rel="noopener noreferrer">Made By Reve</a>
+      </span>
+      <span class="site-footer-social">
+        <a href="https://www.instagram.com/dainocoffee/" target="_blank" rel="noopener noreferrer">
+          <i class="ph ph-instagram-logo" aria-hidden="true"></i>
+          Instagram
+        </a>
+        <a href="/iletisim.html">
+          <i class="ph ph-chat-circle-text" aria-hidden="true"></i>
+          İletişim
+        </a>
+      </span>
+    </footer>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>
